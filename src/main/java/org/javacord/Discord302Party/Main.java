@@ -3,6 +3,7 @@ package org.javacord.Discord302Party;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.javacord.Discord302Party.command.ConfigCommand;
 import org.javacord.Discord302Party.command.NameCommand;
 import org.javacord.Discord302Party.command.VerifyCommand;
 import org.javacord.Discord302Party.command.PointsCommand;
@@ -55,6 +56,7 @@ public class Main {
         api.addSlashCommandCreateListener(new NameCommand());
         api.addSlashCommandCreateListener(new VerifyCommand());
         api.addSlashCommandCreateListener(new PointsCommand());
+        api.addSlashCommandCreateListener(new ConfigCommand());
 
         // Log a message, if the bot joined or left a server
         api.addServerJoinListener(event -> logger.info("Joined server " + event.getServer().getName()));
@@ -76,18 +78,19 @@ public class Main {
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "verification_key", "Your verification key", true))
                 .createForServer(api.getServerById(guildId).get()).join();
 
-        // Register the "points" command
+        // Register the "points" command with optional user mention and points
         new SlashCommandBuilder()
                 .setName("points")
-                .setDescription("Check your points and available points to give out.")
+                .setDescription("Check your points and available points to give out, or give points to another user.")
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.USER, "user", "The Discord user you want to give points to", false))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.LONG, "points", "The amount of points you want to give", false))
                 .createForServer(api.getServerById(guildId).get()).join();
 
-        // Register additional commands similarly...
-
-        // Example: Register the "userinfo" command
+        // Register the "config" command to set the points logging channel
         new SlashCommandBuilder()
-                .setName("userinfo")
-                .setDescription("Displays information about the user.")
+                .setName("config")
+                .setDescription("Configure the bot settings. Requires Administrator privilege.")
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.CHANNEL, "channel", "The channel where points transactions will be logged", true))
                 .createForServer(api.getServerById(guildId).get()).join();
 
         logger.info("Commands registered for guild: " + guildId);
