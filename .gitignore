@@ -16,3 +16,7 @@
 
 # ignore the log from running the bot
 /log/
+
+# environment
+.env
+*.env

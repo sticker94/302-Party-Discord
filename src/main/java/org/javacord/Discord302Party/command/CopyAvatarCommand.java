@@ -1,4 +1,4 @@
-package org.javacord.examplebot.command;
+package org.javacord.Discord302Party.command;
 
 import org.javacord.api.event.message.MessageCreateEvent;
 import org.javacord.api.listener.message.MessageCreateListener;

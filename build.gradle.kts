@@ -22,6 +22,8 @@ repositories {
 dependencies {
     implementation("org.javacord:javacord:3.6.0")
     implementation("org.apache.logging.log4j:log4j-api:2.17.2")
+    implementation("io.github.cdimascio:dotenv-java:3.0.0")
+    implementation("mysql:mysql-connector-java:8.0.32")
     runtimeOnly("org.apache.logging.log4j:log4j-core:2.17.2")
 }
 

@@ -1,4 +1,4 @@
-package org.javacord.examplebot.command;
+package org.javacord.Discord302Party.command;
 
 import org.javacord.api.entity.activity.Activity;
 import org.javacord.api.entity.message.MessageAuthor;
