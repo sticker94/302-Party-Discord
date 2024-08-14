@@ -47,6 +47,7 @@ public class Main {
 
         // Register commands for a specific guild (server)
         long guildId = Long.parseLong(dotenv.get("GUILD_ID"));
+      /*  removeExistingCommands(api, guildId); */
         registerCommands(api, guildId);
 
         // Add listeners
@@ -62,6 +63,18 @@ public class Main {
         // Log a message, if the bot joined or left a server
         api.addServerJoinListener(event -> logger.info("Joined server " + event.getServer().getName()));
         api.addServerLeaveListener(event -> logger.info("Left server " + event.getServer().getName()));
+    }
+
+    private static void removeExistingCommands(DiscordApi api, long guildId) {
+        api.getServerById(guildId).ifPresent(guild -> {
+            guild.getSlashCommands().thenAccept(commands -> {
+                commands.forEach(command -> {
+                    command.deleteForServer(guildId); // Delete each command
+                    logger.info("Deleted command: " + command.getName());
+                });
+                logger.info("All guild commands have been deleted.");
+            });
+        });
     }
 
     private static void registerCommands(DiscordApi api, long guildId) {
