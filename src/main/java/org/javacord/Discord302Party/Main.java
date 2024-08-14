@@ -3,19 +3,16 @@ package org.javacord.Discord302Party;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.javacord.Discord302Party.command.ConfigCommand;
-import org.javacord.Discord302Party.command.NameCommand;
-import org.javacord.Discord302Party.command.VerifyCommand;
-import org.javacord.Discord302Party.command.PointsCommand;
+import org.javacord.Discord302Party.command.*;
 import org.javacord.api.DiscordApi;
 import org.javacord.api.DiscordApiBuilder;
 import org.javacord.api.entity.permission.PermissionType;
 import org.javacord.api.entity.permission.Permissions;
 import org.javacord.api.entity.permission.PermissionsBuilder;
-import org.javacord.api.interaction.SlashCommandBuilder;
-import org.javacord.api.interaction.SlashCommandOption;
-import org.javacord.api.interaction.SlashCommandOptionType;
+import org.javacord.api.interaction.*;
 import org.javacord.api.util.logging.FallbackLoggerConfiguration;
+
+import java.util.List;
 
 public class Main {
 
@@ -57,6 +54,10 @@ public class Main {
         api.addSlashCommandCreateListener(new VerifyCommand());
         api.addSlashCommandCreateListener(new PointsCommand());
         api.addSlashCommandCreateListener(new ConfigCommand());
+        api.addSlashCommandCreateListener(new CheckRankUpCommand());
+        api.addSlashCommandCreateListener(new SetRankRequirementsCommand());
+        api.addSlashCommandCreateListener(new ValidateRankRequirementsCommand());
+        api.addSlashCommandCreateListener(new ViewRankRequirementsCommand());
 
         // Log a message, if the bot joined or left a server
         api.addServerJoinListener(event -> logger.info("Joined server " + event.getServer().getName()));
@@ -64,6 +65,21 @@ public class Main {
     }
 
     private static void registerCommands(DiscordApi api, long guildId) {
+        RankService rankService = new RankService();
+        List<String> ranks = rankService.getAllRanks();
+
+        // Use SlashCommandOptionBuilder directly
+        SlashCommandOptionBuilder rankOptionBuilder = new SlashCommandOptionBuilder()
+                .setType(SlashCommandOptionType.STRING)
+                .setName("rank")
+                .setDescription("Select a rank to view its requirements")
+                .setRequired(false);
+
+        // Add each rank as a choice to the rank option
+        for (String rank : ranks) {
+            rankOptionBuilder.addChoice(SlashCommandOptionChoice.create(rank, rank));
+        }
+
         // Register the "name" command
         new SlashCommandBuilder()
                 .setName("name")
@@ -91,6 +107,36 @@ public class Main {
                 .setName("config")
                 .setDescription("Configure the bot settings. Requires Administrator privilege.")
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.CHANNEL, "channel", "The channel where points transactions will be logged", true))
+                .createForServer(api.getServerById(guildId).get()).join();
+
+        // Register the "set_rank_requirements" command
+        new SlashCommandBuilder()
+                .setName("set_rank_requirements")
+                .setDescription("Set requirements for a rank")
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "rank", "The rank to set requirements for", true))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "description", "Description of the requirement", true))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.LONG, "points", "Points required for the rank", true))
+                .createForServer(api.getServerById(guildId).get()).join();
+
+        // Register the "validate_rank" command
+        new SlashCommandBuilder()
+                .setName("validate_rank")
+                .setDescription("Validate rank requirements for a user")
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.USER, "user", "The user to validate", true))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "rank", "The rank to validate for", true))
+                .createForServer(api.getServerById(guildId).get()).join();
+
+        // Register the "check_rank_up" command
+        new SlashCommandBuilder()
+                .setName("check_rank_up")
+                .setDescription("Check which users are waiting for a rank up")
+                .createForServer(api.getServerById(guildId).get()).join();
+
+        // Register the "view_rank_requirements" command
+        new SlashCommandBuilder()
+                .setName("view_rank_requirements")
+                .setDescription("View all the rank requirements")
+                .addOption(rankOptionBuilder.build()) // Use .build() to convert to SlashCommandOption
                 .createForServer(api.getServerById(guildId).get()).join();
 
         logger.info("Commands registered for guild: " + guildId);
