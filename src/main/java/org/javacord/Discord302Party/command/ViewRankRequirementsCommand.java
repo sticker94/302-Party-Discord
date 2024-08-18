@@ -49,9 +49,9 @@ public class ViewRankRequirementsCommand implements SlashCommandCreateListener {
         try (Connection connection = connect()) {
             String query;
             if (selectedRank != null) {
-                query = "SELECT rank, requirement_description, required_points FROM rank_requirements WHERE rank = ? ORDER BY rank";
+                query = "SELECT rank, requirement_type, required_value FROM rank_requirements WHERE rank = ? ORDER BY rank";
             } else {
-                query = "SELECT rank, requirement_description, required_points FROM rank_requirements ORDER BY rank";
+                query = "SELECT rank, requirement_type, required_value FROM rank_requirements ORDER BY rank";
             }
 
             try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
@@ -67,12 +67,12 @@ public class ViewRankRequirementsCommand implements SlashCommandCreateListener {
                     StringBuilder description = new StringBuilder();
                     while (resultSet.next()) {
                         String rank = resultSet.getString("rank");
-                        String requirementDescription = resultSet.getString("requirement_description");
-                        int requiredPoints = resultSet.getInt("required_points");
+                        String requirementType = resultSet.getString("requirement_type");
+                        int requiredValue = resultSet.getInt("required_value");
 
                         description.append("**Rank:** ").append(rank).append("\n")
-                                .append("**Requirement:** ").append(requirementDescription).append("\n")
-                                .append("**Required Points:** ").append(requiredPoints).append("\n\n");
+                                .append("**Requirement:** ").append(requirementType).append("\n")
+                                .append("**Required Value:** ").append(requiredValue).append("\n\n");
                     }
 
                     embed.setDescription(description.toString());

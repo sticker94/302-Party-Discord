@@ -6,7 +6,6 @@ import org.javacord.api.event.interaction.SlashCommandCreateEvent;
 import org.javacord.api.listener.interaction.SlashCommandCreateListener;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
 import java.sql.*;
 
 public class ValidateRankRequirementsCommand implements SlashCommandCreateListener {

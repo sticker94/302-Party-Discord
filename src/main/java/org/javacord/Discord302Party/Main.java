@@ -12,6 +12,7 @@ import org.javacord.api.entity.permission.PermissionsBuilder;
 import org.javacord.api.interaction.*;
 import org.javacord.api.util.logging.FallbackLoggerConfiguration;
 
+import java.util.Arrays;
 import java.util.List;
 
 public class Main {
@@ -47,7 +48,7 @@ public class Main {
 
         // Register commands for a specific guild (server)
         long guildId = Long.parseLong(dotenv.get("GUILD_ID"));
-      /*  removeExistingCommands(api, guildId); */
+        /*  removeExistingCommands(api, guildId); */
         registerCommands(api, guildId);
 
         // Add listeners
@@ -59,6 +60,7 @@ public class Main {
         api.addSlashCommandCreateListener(new SetRankRequirementsCommand());
         api.addSlashCommandCreateListener(new ValidateRankRequirementsCommand());
         api.addSlashCommandCreateListener(new ViewRankRequirementsCommand());
+        api.addSlashCommandCreateListener(new DeleteRankRequirementsCommand());
 
         // Log a message, if the bot joined or left a server
         api.addServerJoinListener(event -> logger.info("Joined server " + event.getServer().getName()));
@@ -126,9 +128,19 @@ public class Main {
         new SlashCommandBuilder()
                 .setName("set_rank_requirements")
                 .setDescription("Set requirements for a rank")
-                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "rank", "The rank to set requirements for", true))
-                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "description", "Description of the requirement", true))
-                .addOption(SlashCommandOption.create(SlashCommandOptionType.LONG, "points", "Points required for the rank", true))
+                .addOption(SetRankRequirementsCommand.createRankOption(rankService))// Use the populated rank option
+                .addOption(SlashCommandOption.createWithChoices(SlashCommandOptionType.STRING, "requirement_type", "Type of requirement", true,
+                        Arrays.asList(
+                                SlashCommandOptionChoice.create("Points", "Points"),
+                                SlashCommandOptionChoice.create("Points from X different players", "Points from players"),
+                                SlashCommandOptionChoice.create("Points from X different ranks", "Points from ranks"),
+                                SlashCommandOptionChoice.create("Time in Clan", "Time in clan"),
+                                SlashCommandOptionChoice.create("Time at Current Rank", "Time at rank"),
+                                SlashCommandOptionChoice.create("Other", "Other")
+                        )
+                ))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "required_value", "The required value for the rank", false))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "specific_rank", "The specific rank to get points from", false))
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "validate_rank" command
@@ -151,6 +163,15 @@ public class Main {
                 .setDescription("View all the rank requirements")
                 .addOption(rankOptionBuilder.build()) // Use .build() to convert to SlashCommandOption
                 .createForServer(api.getServerById(guildId).get()).join();
+
+        // Register the "delete_rank_requirement" command
+        new SlashCommandBuilder()
+                .setName("delete_rank_requirement")
+                .setDescription("Delete a rank requirement. Requires Manage Server permission.")
+                .addOption(rankOptionBuilder.build()) // Use .build() to convert to SlashCommandOption
+                .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)  // Enforce permission requirement here
+                .createForServer(api.getServerById(guildId).get()).join();
+
 
         logger.info("Commands registered for guild: " + guildId);
     }
