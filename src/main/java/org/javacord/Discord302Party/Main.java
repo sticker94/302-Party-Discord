@@ -4,6 +4,9 @@ import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.javacord.Discord302Party.command.*;
+import org.javacord.Discord302Party.service.RankService;
+import org.javacord.Discord302Party.service.WOMClientService;
+import org.javacord.Discord302Party.service.WOMGroupUpdater;
 import org.javacord.api.DiscordApi;
 import org.javacord.api.DiscordApiBuilder;
 import org.javacord.api.entity.permission.PermissionType;
@@ -49,6 +52,14 @@ public class Main {
         // Register commands for a specific guild (server)
         long guildId = Long.parseLong(dotenv.get("GUILD_ID"));
         /*  removeExistingCommands(api, guildId); */
+
+        // Set up WOMClientService
+        WOMClientService womClientService = new WOMClientService();
+
+        // Initialize and start WOMGroupUpdater
+        WOMGroupUpdater updater = new WOMGroupUpdater(api);
+        updater.startUpdater();
+
         registerCommands(api, guildId);
 
         // Add listeners

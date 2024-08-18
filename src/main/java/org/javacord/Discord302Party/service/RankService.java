@@ -1,4 +1,4 @@
-package org.javacord.Discord302Party;
+package org.javacord.Discord302Party.service;
 
 import io.github.cdimascio.dotenv.Dotenv;
 
