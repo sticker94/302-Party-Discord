@@ -68,7 +68,7 @@ public class ViewRankRequirementsCommand implements SlashCommandCreateListener {
                     while (resultSet.next()) {
                         String rank = resultSet.getString("rank");
                         String requirementType = resultSet.getString("requirement_type");
-                        int requiredValue = resultSet.getInt("required_value");
+                        String requiredValue = resultSet.getString("required_value");
 
                         description.append("**Rank:** ").append(rank).append("\n")
                                 .append("**Requirement:** ").append(requirementType).append("\n")

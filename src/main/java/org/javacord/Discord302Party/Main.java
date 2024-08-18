@@ -4,7 +4,7 @@ import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.javacord.Discord302Party.command.*;
-import org.javacord.Discord302Party.service.RankService;
+import org.javacord.Discord302Party.service.RankRequirementUpdater;
 import org.javacord.Discord302Party.service.WOMClientService;
 import org.javacord.Discord302Party.service.WOMGroupUpdater;
 import org.javacord.api.DiscordApi;
@@ -60,6 +60,10 @@ public class Main {
         WOMGroupUpdater updater = new WOMGroupUpdater(api);
         updater.startUpdater();
 
+        // Initialize and start RankRequirementUpdater
+        RankRequirementUpdater rankRequirementUpdater = new RankRequirementUpdater();
+        rankRequirementUpdater.startUpdater();
+
         registerCommands(api, guildId);
 
         // Add listeners
@@ -91,8 +95,8 @@ public class Main {
     }
 
     private static void registerCommands(DiscordApi api, long guildId) {
-        RankService rankService = new RankService();
-        List<String> ranks = rankService.getAllRanks();
+        RankRequirementUpdater rankRequirementUpdater = new RankRequirementUpdater();
+        List<String> ranks = rankRequirementUpdater.getAllRanks();
 
         // Use SlashCommandOptionBuilder directly
         SlashCommandOptionBuilder rankOptionBuilder = new SlashCommandOptionBuilder()
@@ -139,7 +143,7 @@ public class Main {
         new SlashCommandBuilder()
                 .setName("set_rank_requirements")
                 .setDescription("Set requirements for a rank")
-                .addOption(SetRankRequirementsCommand.createRankOption(rankService))// Use the populated rank option
+                .addOption(SetRankRequirementsCommand.createRankOption(rankRequirementUpdater))// Use the populated rank option
                 .addOption(SlashCommandOption.createWithChoices(SlashCommandOptionType.STRING, "requirement_type", "Type of requirement", true,
                         Arrays.asList(
                                 SlashCommandOptionChoice.create("Points", "Points"),

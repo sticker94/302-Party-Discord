@@ -32,11 +32,8 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                         "    m.rank AS current_rank, " +
                         "    m.points AS current_points, " +
                         "    r_next.rank AS next_rank, " +
-                        "    rr.required_points AS required_points_for_next_rank, " +
-                        "    CASE " +
-                        "        WHEN m.points >= rr.required_points THEN 'Yes' " +
-                        "        ELSE 'No' " +
-                        "    END AS has_met_points_requirement " +
+                        "    rr.required_value AS required_points_for_next_rank, " +
+                        "    rr.requirement_type " +
                         "FROM " +
                         "    members m " +
                         "JOIN " +
@@ -49,8 +46,11 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                         "    ) " +
                         "LEFT JOIN " +
                         "    rank_requirements rr ON rr.rank = r_next.rank " +
+                        "LEFT JOIN " +
+                        "    validation_log vl ON m.username = vl.character_name AND rr.rank = vl.rank AND rr.id = vl.requirement_id " +
                         "WHERE " +
-                        "    m.points >= rr.required_points " +
+                        "    (rr.requirement_type != 'other' AND m.points >= rr.required_value) " +
+                        "    OR (rr.requirement_type = 'other' AND vl.id IS NOT NULL) " +
                         "ORDER BY " +
                         "    r_current.rank_order ASC;";
 
@@ -70,18 +70,22 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                         String currentRank = resultSet.getString("current_rank");
                         String nextRank = resultSet.getString("next_rank");
                         int points = resultSet.getInt("current_points");
-                        int requiredPoints = resultSet.getInt("required_points_for_next_rank");
+                        String requiredPoints = resultSet.getString("required_points_for_next_rank");
+                        String requirementType = resultSet.getString("requirement_type");
+
+                        String rankUpInfo = "Current Rank: " + currentRank + "\nNext Rank: " + nextRank;
+
+                        if (!"other".equalsIgnoreCase(requirementType)) {
+                            rankUpInfo += "\nPoints: " + points + " (Required: " + requiredPoints + ")";
+                        } else {
+                            rankUpInfo += "\nSpecial Requirement: Validated";
+                        }
 
                         response.append(username)
-                                .append(" - Current Rank: ").append(currentRank)
-                                .append(", Next Rank: ").append(nextRank)
-                                .append(", Points: ").append(points)
-                                .append(" (Required: ").append(requiredPoints).append(")\n");
+                                .append(" - ").append(rankUpInfo).append("\n");
 
                         // Add to embed for structured display
-                        embedBuilder.addField(username, "Current Rank: " + currentRank +
-                                "\nNext Rank: " + nextRank +
-                                "\nPoints: " + points + " (Required: " + requiredPoints + ")");
+                        embedBuilder.addField(username, rankUpInfo);
                     }
 
                     if (!hasResults) {

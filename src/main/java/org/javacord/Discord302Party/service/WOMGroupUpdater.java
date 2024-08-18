@@ -134,8 +134,6 @@ public class WOMGroupUpdater {
         }
     }
 
-
-
     private void logNameChange(Connection connection, int WOMId, String oldUsername, String newUsername) throws SQLException {
         String sql = "INSERT INTO rank_history (WOM_id, username, old_username, rank, rank_obtained_timestamp, rank_pulled_timestamp) " +
                 "VALUES (?, ?, ?, 'Name Change', NOW(), NOW())";
@@ -180,11 +178,12 @@ public class WOMGroupUpdater {
                     String existingRank = rs.getString("rank");
 
                     if (existingWOMId != member.getWOMId() || !existingRank.equals(member.getRank())) {
-                        String updateSql = "UPDATE members SET WOM_id = ?, rank = ?, last_rank_update = NOW(), last_WOM_update = NOW() WHERE username = ?";
+                        String updateSql = "UPDATE members SET WOM_id = ?, rank = ?, last_rank_update = NOW(), last_WOM_update = NOW(), joinDate = ? WHERE username = ?";
                         try (PreparedStatement updateStmt = connection.prepareStatement(updateSql)) {
                             updateStmt.setInt(1, member.getWOMId());
                             updateStmt.setString(2, member.getRank());
-                            updateStmt.setString(3, member.getUsername());
+                            updateStmt.setTimestamp(3, member.getJoinDate());
+                            updateStmt.setString(4, member.getUsername());
                             updateStmt.executeUpdate();
                         }
                     } else {
@@ -197,12 +196,13 @@ public class WOMGroupUpdater {
                     }
                 } else {
                     // If the member does not exist, insert a new record
-                    String insertSql = "INSERT INTO members (WOM_id, username, rank, last_rank_update, last_WOM_update) " +
-                            "VALUES (?, ?, ?, NOW(), NOW())";
+                    String insertSql = "INSERT INTO members (WOM_id, username, rank, last_rank_update, last_WOM_update, joinDate) " +
+                            "VALUES (?, ?, ?, NOW(), NOW(), ?)";
                     try (PreparedStatement insertStmt = connection.prepareStatement(insertSql)) {
                         insertStmt.setInt(1, member.getWOMId());
                         insertStmt.setString(2, member.getUsername());
                         insertStmt.setString(3, member.getRank());
+                        insertStmt.setTimestamp(4, member.getJoinDate());
                         insertStmt.executeUpdate();
                     }
                 }

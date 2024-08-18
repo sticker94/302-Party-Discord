@@ -26,6 +26,7 @@ public class WOMClientService {
     public List<Member> getGroupMembers(int groupId) {
         String endpoint = String.format("/groups/%d", groupId);
         String jsonResponse = sendGetRequest(endpoint);
+        logger.info (jsonResponse);
         return parseGroupMembers(jsonResponse);
     }
 
@@ -71,9 +72,10 @@ public class WOMClientService {
                     int WOMId = player.get("id").asInt();
                     String username = player.get("username").asText();
                     String rank = membership.get("role").asText(); // Assuming 'role' as rank
-                    Timestamp rankObtainedTimestamp = Timestamp.valueOf(membership.get("createdAt").asText().replace("T", " ").replace("Z", ""));
+                    Timestamp rankObtainedTimestamp = Timestamp.valueOf(membership.get("updatedAt").asText().replace("T", " ").replace("Z", ""));
+                    Timestamp joinDate = Timestamp.valueOf(membership.get("createdAt").asText().replace("T", " ").replace("Z", ""));
 
-                    members.add(new Member(WOMId, username, rank, rankObtainedTimestamp));
+                    members.add(new Member(WOMId, username, rank, rankObtainedTimestamp, joinDate));
                 }
             }
 

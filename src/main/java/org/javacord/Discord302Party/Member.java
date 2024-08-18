@@ -8,12 +8,14 @@ public class Member {
     private String username;
     private String rank;
     private Timestamp rankObtainedTimestamp;
+    private Timestamp joinDate;
 
-    public Member(int WOMId, String username, String rank, Timestamp rankObtainedTimestamp) {
+    public Member(int WOMId, String username, String rank, Timestamp rankObtainedTimestamp, Timestamp joinDate) {
         this.WOMId = WOMId;
         this.username = username;
         this.rank = rank;
         this.rankObtainedTimestamp = rankObtainedTimestamp;
+        this.joinDate = joinDate;
     }
 
     public int getWOMId() {
@@ -32,6 +34,10 @@ public class Member {
         return rankObtainedTimestamp;
     }
 
+    public Timestamp getJoinDate() {
+        return joinDate;
+    }
+
     public void setWOMId(int WOMId) {
         this.WOMId = WOMId;
     }
@@ -46,5 +52,9 @@ public class Member {
 
     public void setRankObtainedTimestamp(Timestamp rankObtainedTimestamp) {
         this.rankObtainedTimestamp = rankObtainedTimestamp;
+    }
+
+    public void setJoinDate(Timestamp joinDate) {
+        this.joinDate = joinDate;
     }
 }
