@@ -76,6 +76,7 @@ public class Main {
         api.addSlashCommandCreateListener(new ValidateRankRequirementsCommand());
         api.addSlashCommandCreateListener(new ViewRankRequirementsCommand());
         api.addSlashCommandCreateListener(new DeleteRankRequirementsCommand());
+        api.addSlashCommandCreateListener(new RunUpdatersCommand(updater, rankRequirementUpdater));
 
         // Log a message, if the bot joined or left a server
         api.addServerJoinListener(event -> logger.info("Joined server " + event.getServer().getName()));
@@ -124,18 +125,20 @@ public class Main {
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "verification_key", "Your verification key", true))
                 .createForServer(api.getServerById(guildId).get()).join();
 
-        // Register the "points" command with optional user mention and points
+        // Register the "points" command with optional user mention, points, and reason
         new SlashCommandBuilder()
                 .setName("points")
-                .setDescription("Check your points and available points to give out, or give points to another user.")
+                .setDescription("Check your points or give points to another user with an optional reason.") // Shorten the description
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.USER, "user", "The Discord user you want to give points to", false))
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.LONG, "points", "The amount of points you want to give", false))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "reason", "The reason for giving points", false)) // Add the reason option
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "config" command to set the points logging channel
         new SlashCommandBuilder()
                 .setName("config")
                 .setDescription("Configure the bot settings. Requires Administrator privilege.")
+                .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.CHANNEL, "channel", "The channel where points transactions will be logged", true))
                 .createForServer(api.getServerById(guildId).get()).join();
 
@@ -143,19 +146,19 @@ public class Main {
         new SlashCommandBuilder()
                 .setName("set_rank_requirements")
                 .setDescription("Set requirements for a rank")
-                .addOption(SetRankRequirementsCommand.createRankOption(rankRequirementUpdater))// Use the populated rank option
+                .addOption(SetRankRequirementsCommand.createRankOption(rankRequirementUpdater)) // Use the populated rank option
                 .addOption(SlashCommandOption.createWithChoices(SlashCommandOptionType.STRING, "requirement_type", "Type of requirement", true,
                         Arrays.asList(
                                 SlashCommandOptionChoice.create("Points", "Points"),
-                                SlashCommandOptionChoice.create("Points from X different players", "Points from players"),
-                                SlashCommandOptionChoice.create("Points from X different ranks", "Points from ranks"),
+                                SlashCommandOptionChoice.create("From Different Players", "Points from players"),
+                                SlashCommandOptionChoice.create("From Different Ranks", "Points from ranks"),
                                 SlashCommandOptionChoice.create("Time in Clan", "Time in clan"),
-                                SlashCommandOptionChoice.create("Time at Current Rank", "Time at rank"),
+                                SlashCommandOptionChoice.create("Time at Rank", "Time at rank"),
                                 SlashCommandOptionChoice.create("Other", "Other")
                         )
                 ))
-                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "required_value", "The required value for the rank", false))
-                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "specific_rank", "The specific rank to get points from", false))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "required_value", "The required value", false))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "specific_rank", "Specific rank to get points from", false))
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "validate_rank" command
@@ -184,7 +187,14 @@ public class Main {
                 .setName("delete_rank_requirement")
                 .setDescription("Delete a rank requirement. Requires Manage Server permission.")
                 .addOption(rankOptionBuilder.build()) // Use .build() to convert to SlashCommandOption
-                .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)  // Enforce permission requirement here
+                .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
+                .createForServer(api.getServerById(guildId).get()).join();
+
+        // Register the "run_updaters" command
+        new SlashCommandBuilder()
+                .setName("run_updaters")
+                .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
+                .setDescription("Manually run the WOMGroupUpdater and RankRequirementUpdater.")
                 .createForServer(api.getServerById(guildId).get()).join();
 
 

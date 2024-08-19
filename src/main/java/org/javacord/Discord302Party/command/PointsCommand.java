@@ -210,13 +210,15 @@ public class PointsCommand implements SlashCommandCreateListener {
                 return;
             }
 
-            // Check if a mention and points were provided
+            // Check if a mention, points, and reason were provided
             logger.info("Attempting to retrieve optional arguments...");
             User mentionedUser = event.getSlashCommandInteraction().getOptionUserValueByName("user").orElse(null);
             Optional<Long> pointsToGiveOpt = event.getSlashCommandInteraction().getOptionLongValueByName("points");
+            String reason = event.getSlashCommandInteraction().getOptionStringValueByName("reason").orElse("No reason provided");
 
             logger.info("Mentioned user: " + (mentionedUser != null ? mentionedUser.getDiscriminatedName() : "None"));
             logger.info("Points to give: " + pointsToGiveOpt.orElse(0L));
+            logger.info("Reason: " + reason);
 
             int pointsToGive = pointsToGiveOpt.map(Long::intValue).orElse(0);
 
@@ -251,7 +253,7 @@ public class PointsCommand implements SlashCommandCreateListener {
 
                     // Post to the configured channel
                     postPointsUpdate(server, mentionedCharacterName + " now has " + getUserPoints(mentionedCharacterName)
-                            + " points! Received " + pointsToGive + " from " + characterName);
+                            + " points! Received " + pointsToGive + " from " + characterName + " for " + reason);
 
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
                             .setContent("Gave " + mentionedCharacterName + " " + pointsToGive + " points | " + updatedAvailablePoints + " remaining.")

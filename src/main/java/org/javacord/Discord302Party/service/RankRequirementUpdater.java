@@ -31,7 +31,7 @@ public class RankRequirementUpdater {
         }, 0, UPDATE_INTERVAL);  // Run immediately, then repeat every hour
     }
 
-    private void validateAllRankRequirements() {
+    public void validateAllRankRequirements() {
         try (Connection connection = connect()) {
             String query = "SELECT discord_uid FROM discord_users";
             try (PreparedStatement preparedStatement = connection.prepareStatement(query);
