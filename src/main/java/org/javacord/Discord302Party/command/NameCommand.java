@@ -27,7 +27,7 @@ public class NameCommand implements SlashCommandCreateListener {
     }
 
     private boolean isMemberInClan(String username) {
-        String query = "SELECT * FROM members WHERE username = ?";
+        String query = "SELECT * FROM members WHERE REPLACE(username, '_', ' ') = ?";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, username);
@@ -40,7 +40,7 @@ public class NameCommand implements SlashCommandCreateListener {
     }
 
     private String getRank(String username) {
-        String query = "SELECT rank FROM members WHERE username = ?";
+        String query = "SELECT rank FROM members WHERE REPLACE(username, '_', ' ') = ?";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, username);
