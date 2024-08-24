@@ -1,5 +1,7 @@
 package org.javacord.Discord302Party.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -49,6 +51,9 @@ public class WOMGroupUpdater {
 
     public void updateGroupMembers() {
         try {
+            // Fetch name changes from WOM API
+            checkAndUpdateNameChanges();
+
             String urlString = "https://api.wiseoldman.net/v2/groups/" + GROUP_ID;
             URL url = new URL(urlString);
             HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
@@ -81,6 +86,70 @@ public class WOMGroupUpdater {
 
         } catch (Exception e) {
             logger.error("Error fetching group members from Wise Old Man API", e);
+        }
+    }
+
+    private void checkAndUpdateNameChanges() {
+        try {
+            String urlString = "https://api.wiseoldman.net/v2/groups/" + GROUP_ID + "/name-changes?limit=5";
+            URL url = new URL(urlString);
+            HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("x-api-key", WOM_API_KEY);
+            conn.setRequestProperty("User-Agent", DISCORD_NAME);
+
+            BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            String inputLine;
+            StringBuilder content = new StringBuilder();
+            while ((inputLine = in.readLine()) != null) {
+                content.append(inputLine);
+            }
+            in.close();
+
+            ObjectMapper objectMapper = new ObjectMapper();
+            JsonNode nameChanges = objectMapper.readTree(content.toString());
+
+            try (Connection connection = connect()) {
+                for (JsonNode nameChange : nameChanges) {
+                    String oldName = nameChange.get("oldName").asText();
+                    String newName = nameChange.get("newName").asText();
+
+                    // Store the name change in the database
+                    storeNameChange(connection, oldName, newName);
+
+                    // Update the name in the members table
+                    updateMemberName(connection, oldName, newName);
+                }
+            } catch (SQLException e) {
+                logger.error("Error updating name changes in database", e);
+            }
+
+        } catch (Exception e) {
+            logger.error("Error fetching name changes from Wise Old Man API", e);
+        }
+    }
+
+    private void storeNameChange(Connection connection, String oldName, String newName) throws SQLException {
+        String insertSql = "INSERT INTO name_changes (old_name, new_name, change_date) VALUES (?, ?, NOW())";
+        try (PreparedStatement stmt = connection.prepareStatement(insertSql)) {
+            stmt.setString(1, oldName);
+            stmt.setString(2, newName);
+            stmt.executeUpdate();
+            logger.info("Stored name change from " + oldName + " to " + newName);
+        }
+    }
+
+    private void updateMemberName(Connection connection, String oldName, String newName) throws SQLException {
+        String updateSql = "UPDATE members SET username = ? WHERE username = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(updateSql)) {
+            stmt.setString(1, newName);
+            stmt.setString(2, oldName);
+            int rowsUpdated = stmt.executeUpdate();
+            if (rowsUpdated > 0) {
+                logger.info("Updated username from " + oldName + " to " + newName);
+            } else {
+                logger.warn("No member found with username " + oldName);
+            }
         }
     }
 
