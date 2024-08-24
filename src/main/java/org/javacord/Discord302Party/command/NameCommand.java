@@ -27,10 +27,10 @@ public class NameCommand implements SlashCommandCreateListener {
     }
 
     private boolean isMemberInClan(String username) {
-        String query = "SELECT * FROM members WHERE REPLACE(username, '_', ' ') = ?";
+        String query = "SELECT * FROM members WHERE LOWER(REPLACE(username, '_', ' ')) = LOWER(?)";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-            preparedStatement.setString(1, username);
+            preparedStatement.setString(1, username.toLowerCase());
             ResultSet resultSet = preparedStatement.executeQuery();
             return resultSet.next(); // Return true if a result is found
         } catch (SQLException e) {
@@ -40,10 +40,10 @@ public class NameCommand implements SlashCommandCreateListener {
     }
 
     private String getRank(String username) {
-        String query = "SELECT rank FROM members WHERE REPLACE(username, '_', ' ') = ?";
+        String query = "SELECT rank FROM members WHERE LOWER(REPLACE(username, '_', ' ')) = LOWER(?)";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-            preparedStatement.setString(1, username);
+            preparedStatement.setString(1, username.toLowerCase());
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
                 return resultSet.getString("rank");
@@ -55,11 +55,11 @@ public class NameCommand implements SlashCommandCreateListener {
     }
 
     private boolean isDuplicateEntry(long discordUid, String characterName) {
-        String query = "SELECT * FROM discord_users WHERE discord_uid = ? OR character_name = ?";
+        String query = "SELECT * FROM discord_users WHERE discord_uid = ? OR LOWER(character_name) = LOWER(?)";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setLong(1, discordUid);
-            preparedStatement.setString(2, characterName);
+            preparedStatement.setString(2, characterName.toLowerCase());
             ResultSet resultSet = preparedStatement.executeQuery();
             return resultSet.next(); // Return true if a duplicate is found
         } catch (SQLException e) {
