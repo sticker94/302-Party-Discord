@@ -91,7 +91,7 @@ public class WOMGroupUpdater {
 
     private void checkAndUpdateNameChanges() {
         try {
-            String urlString = "https://api.wiseoldman.net/v2/groups/" + GROUP_ID + "/name-changes?limit=5";
+            String urlString = "https://api.wiseoldman.net/v2/groups/" + GROUP_ID + "/name-changes";
             URL url = new URL(urlString);
             HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
@@ -130,6 +130,12 @@ public class WOMGroupUpdater {
     }
 
     private void storeNameChange(Connection connection, String oldName, String newName) throws SQLException {
+        // Check if the name change is already stored
+        if (isNameChangeStored(connection, oldName, newName)) {
+            logger.info("Name change from " + oldName + " to " + newName + " is already stored.");
+            return; // Skip insertion if the name change is already in the database
+        }
+
         String insertSql = "INSERT INTO name_changes (old_name, new_name, change_date) VALUES (?, ?, NOW())";
         try (PreparedStatement stmt = connection.prepareStatement(insertSql)) {
             stmt.setString(1, oldName);
@@ -138,6 +144,21 @@ public class WOMGroupUpdater {
             logger.info("Stored name change from " + oldName + " to " + newName);
         }
     }
+
+    private boolean isNameChangeStored(Connection connection, String oldName, String newName) throws SQLException {
+        String query = "SELECT COUNT(*) FROM name_changes WHERE old_name = ? AND new_name = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setString(1, oldName);
+            stmt.setString(2, newName);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1) > 0; // Return true if the name change is already stored
+                }
+            }
+        }
+        return false; // Return false if the name change is not found in the database
+    }
+
 
     private void updateMemberName(Connection connection, String oldName, String newName) throws SQLException {
         String updateSql = "UPDATE members SET username = ? WHERE username = ?";
@@ -287,33 +308,99 @@ public class WOMGroupUpdater {
     }
 
     private void removeLeftMembers(List<Member> currentMembers) {
-        try (Connection connection = connect()) {
-            String sql = "SELECT username FROM members WHERE last_WOM_update < (NOW() - INTERVAL 1 HOUR) AND deleted = 0";
-            try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
-                try (ResultSet resultSet = preparedStatement.executeQuery()) {
-                    while (resultSet.next()) {
-                        String username = resultSet.getString("username");
+        try {
+            String urlString = "https://api.wiseoldman.net/v2/groups/" + GROUP_ID + "/activity";
+            URL url = new URL(urlString);
+            HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("x-api-key", WOM_API_KEY);
+            conn.setRequestProperty("User-Agent", DISCORD_NAME);
 
-                        Server server = api.getServerById(Long.parseLong(dotenv.get("GUILD_ID"))).orElse(null);
-                        if (server != null) {
-                            server.getMembersByName(username).forEach(user -> {
-                                removeRoleFromUser(user, "Green Party Hat");
-                                // Optionally remove other rank-related roles if necessary
-                            });
+            BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            String inputLine;
+            StringBuilder content = new StringBuilder();
+            while ((inputLine = in.readLine()) != null) {
+                content.append(inputLine);
+            }
+            in.close();
+
+            ObjectMapper objectMapper = new ObjectMapper();
+            JsonNode activityEvents = objectMapper.readTree(content.toString());
+
+            try (Connection connection = connect()) {
+                for (JsonNode event : activityEvents) {
+                    if (event.get("type").asText().equals("left")) {
+                        String username = event.get("player").get("username").asText();
+
+                        // Fetch the rank of the player from the members table
+                        String rank = getMemberRank(connection, username);
+
+                        if (rank != null) {
+                            // Remove the member from the database
+                            removeMemberFromDatabase(connection, username);
+
+                            // Remove their roles from Discord
+                            removeRolesFromDiscord(username, rank);
                         }
-
-                        String updateSql = "UPDATE members SET deleted = 1 WHERE username = ?";
-                        try (PreparedStatement updateStmt = connection.prepareStatement(updateSql)) {
-                            updateStmt.setString(1, username);
-                            updateStmt.executeUpdate();
-                        }
-
-                        logger.info("Marked user as deleted: " + username);
                     }
                 }
+            } catch (SQLException e) {
+                logger.error("Error removing left members from database", e);
             }
-        } catch (SQLException e) {
-            logger.error("Error removing left members from database", e);
+
+        } catch (Exception e) {
+            logger.error("Error fetching group activity from Wise Old Man API", e);
+        }
+    }
+
+    private String getMemberRank(Connection connection, String username) throws SQLException {
+        String query = "SELECT rank FROM members WHERE username = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setString(1, username);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString("rank");
+                }
+            }
+        }
+        return null;
+    }
+
+    private void removeMemberFromDatabase(Connection connection, String username) throws SQLException {
+        String deleteSql = "DELETE FROM members WHERE username = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(deleteSql)) {
+            stmt.setString(1, username);
+            int rowsDeleted = stmt.executeUpdate();
+            if (rowsDeleted > 0) {
+                logger.info("Deleted member " + username + " from the members table.");
+            } else {
+                logger.warn("No member found with username " + username);
+            }
+        }
+    }
+
+    private void removeRolesFromDiscord(String username, String rank) {
+        Server server = api.getServerById(Long.parseLong(dotenv.get("GUILD_ID"))).orElse(null);
+        if (server == null) {
+            logger.error("Server not found!");
+            return;
+        }
+
+        Optional<User> userOptional = server.getMembersByName(username).stream().findFirst();
+        if (userOptional.isPresent()) {
+            User user = userOptional.get();
+
+            // Remove the rank role
+            Optional<org.javacord.api.entity.permission.Role> rankRole = server.getRolesByNameIgnoreCase(rank).stream().findFirst();
+            rankRole.ifPresent(role -> user.removeRole(role).exceptionally(ExceptionLogger.get()));
+
+            // Remove the "Green Party Hats" role
+            Optional<org.javacord.api.entity.permission.Role> greenPartyHatsRole = server.getRolesByNameIgnoreCase("Green Party Hats").stream().findFirst();
+            greenPartyHatsRole.ifPresent(role -> user.removeRole(role).exceptionally(ExceptionLogger.get()));
+
+            logger.info("Removed roles from user: " + username);
+        } else {
+            logger.warn("User not found on the server: " + username);
         }
     }
 
