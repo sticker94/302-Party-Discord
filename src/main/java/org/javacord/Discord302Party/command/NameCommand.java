@@ -138,6 +138,11 @@ public class NameCommand implements SlashCommandCreateListener {
                 Role greenPartyHatsRole = server.getRoleById("1168065194858119218").orElse(null);
                 if (greenPartyHatsRole != null) {
                     if (!user.getRoles(server).contains(greenPartyHatsRole)) {
+                        try {
+                            Thread.sleep(50);  // Introduce a short delay to avoid timing issues
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
                         boolean roleAssigned = retryOperation(() ->
                                 user.addRole(greenPartyHatsRole).exceptionally(ExceptionLogger.get())
                         );
@@ -151,6 +156,8 @@ public class NameCommand implements SlashCommandCreateListener {
                     return;
                 }
 
+
+
                 // Assign role based on rank
                 String rank = getRank(characterName);
                 if (rank != null) {
@@ -160,6 +167,11 @@ public class NameCommand implements SlashCommandCreateListener {
 
                     if (role != null) {
                         if (!user.getRoles(server).contains(role)) {
+                            try {
+                                Thread.sleep(50);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
                             boolean rankRoleAssigned = retryOperation(() ->
                                     user.addRole(role).exceptionally(ExceptionLogger.get())
                             );
