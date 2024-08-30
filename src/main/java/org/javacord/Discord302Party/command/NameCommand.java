@@ -5,14 +5,12 @@ import org.javacord.api.entity.permission.Role;
 import org.javacord.api.entity.server.Server;
 import org.javacord.api.entity.user.User;
 import org.javacord.api.event.interaction.SlashCommandCreateEvent;
+import org.javacord.api.interaction.callback.InteractionOriginalResponseUpdater;
 import org.javacord.api.listener.interaction.SlashCommandCreateListener;
 import org.javacord.api.util.logging.ExceptionLogger;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
+import java.util.concurrent.CompletableFuture;
 
 public class NameCommand implements SlashCommandCreateListener {
 
@@ -55,17 +53,19 @@ public class NameCommand implements SlashCommandCreateListener {
     }
 
     private boolean isDuplicateEntry(long discordUid, String characterName) {
-        String query = "SELECT * FROM discord_users WHERE discord_uid = ? OR LOWER(character_name) = LOWER(?)";
+        String query = "SELECT discord_uid FROM discord_users WHERE LOWER(character_name) = LOWER(?)";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-            preparedStatement.setLong(1, discordUid);
-            preparedStatement.setString(2, characterName.toLowerCase());
+            preparedStatement.setString(1, characterName.toLowerCase());
             ResultSet resultSet = preparedStatement.executeQuery();
-            return resultSet.next(); // Return true if a duplicate is found
+            if (resultSet.next()) {
+                long existingDiscordUid = resultSet.getLong("discord_uid");
+                return existingDiscordUid != discordUid; // True if the UID is different, indicating a potential duplicate
+            }
         } catch (SQLException e) {
             e.printStackTrace();
-            return false;
         }
+        return false; // No duplicate found
     }
 
     private void saveToDuplicateTable(long discordUid, String characterName) {
@@ -81,7 +81,7 @@ public class NameCommand implements SlashCommandCreateListener {
     }
 
     private void saveUserDetails(long discordUid, String characterName, String rank) {
-        String query = "INSERT INTO discord_users (discord_uid, character_name, rank) VALUES (?, ?, ?)";
+        String query = "INSERT INTO discord_users (discord_uid, character_name, rank) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE rank = VALUES(rank)";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setLong(1, discordUid);
@@ -111,61 +111,99 @@ public class NameCommand implements SlashCommandCreateListener {
                 return;
             }
 
+            // Initial response to avoid timeout
+            InteractionOriginalResponseUpdater updater = event.getSlashCommandInteraction()
+                    .createImmediateResponder()
+                    .setContent("Processing your request...")
+                    .respond().join();
+
             if (isDuplicateEntry(discordUid, characterName)) {
                 saveToDuplicateTable(discordUid, characterName);
-                event.getSlashCommandInteraction().createImmediateResponder()
-                        .setContent("Duplicate entry found. Your information has been saved for review.")
-                        .respond();
+                updater.setContent("Duplicate entry found. Your information has been saved for review.").update();
                 return;
             }
 
             if (isMemberInClan(characterName)) {
                 // Set Discord name to just the character name
-                user.updateNickname(server, characterName).exceptionally(ExceptionLogger.get());
+                boolean nicknameUpdated = retryOperation(() ->
+                        user.updateNickname(server, characterName).exceptionally(ExceptionLogger.get())
+                );
 
-                // Add "Green Party Hats" role to everyone
-                Role greenPartyHatsRole = server.getRolesByNameIgnoreCase("Green Party Hats").stream().findFirst().orElse(null);
+                if (!nicknameUpdated) {
+                    updater.setContent("Failed to update your nickname after several attempts. Please try again later.").update();
+                    return;
+                }
+
+                // Assign "Green Party Hats" role by ID for reliability
+                Role greenPartyHatsRole = server.getRoleById("1168065194858119218").orElse(null);
                 if (greenPartyHatsRole != null) {
-                    server.addRoleToUser(user, greenPartyHatsRole).exceptionally(ExceptionLogger.get());
+                    if (!user.getRoles(server).contains(greenPartyHatsRole)) {
+                        boolean roleAssigned = retryOperation(() ->
+                                user.addRole(greenPartyHatsRole).exceptionally(ExceptionLogger.get())
+                        );
+                        if (!roleAssigned) {
+                            updater.setContent("Failed to assign the 'Green Party Hats' role after several attempts.").update();
+                            return;
+                        }
+                    }
                 } else {
-                    event.getSlashCommandInteraction().createImmediateResponder()
-                            .setContent("Green Party Hats role not found.")
-                            .respond();
+                    updater.setContent("Green Party Hats role not found.").update();
                     return;
                 }
 
                 // Assign role based on rank
                 String rank = getRank(characterName);
                 if (rank != null) {
-                    Role role = null;
-                    if (rank.equalsIgnoreCase("deputy_owner")) {
-                        role = server.getRolesByNameIgnoreCase("Co-Owner").stream().findFirst().orElse(null);
-                    } else {
-                        role = server.getRolesByNameIgnoreCase(rank).stream().findFirst().orElse(null);
-                    }
+                    Role role = rank.equalsIgnoreCase("deputy_owner") ?
+                            server.getRolesByNameIgnoreCase("Co-Owner").stream().findFirst().orElse(null) :
+                            server.getRolesByNameIgnoreCase(rank).stream().findFirst().orElse(null);
 
                     if (role != null) {
-                        server.addRoleToUser(user, role).exceptionally(ExceptionLogger.get());
-                        // Save user details in the database
+                        if (!user.getRoles(server).contains(role)) {
+                            boolean rankRoleAssigned = retryOperation(() ->
+                                    user.addRole(role).exceptionally(ExceptionLogger.get())
+                            );
+                            if (!rankRoleAssigned) {
+                                updater.setContent("Failed to assign the role for your rank after several attempts.").update();
+                                return;
+                            }
+                        }
+                        // Save or update user details in the database
                         saveUserDetails(discordUid, characterName, rank);
-                        event.getSlashCommandInteraction().createImmediateResponder()
-                                .setContent("Name updated, roles assigned, and details saved!")
-                                .respond();
+                        updater.setContent("Name updated, roles assigned, and details saved!").update();
                     } else {
-                        event.getSlashCommandInteraction().createImmediateResponder()
-                                .setContent("Role not found for the rank: " + rank)
-                                .respond();
+                        updater.setContent("Role not found for the rank: " + rank).update();
                     }
                 } else {
-                    event.getSlashCommandInteraction().createImmediateResponder()
-                            .setContent("Rank not found for your character.")
-                            .respond();
+                    updater.setContent("Rank not found for your character.").update();
                 }
             } else {
-                event.getSlashCommandInteraction().createImmediateResponder()
-                        .setContent("You are not a member of the clan.")
-                        .respond();
+                updater.setContent("You are not a member of the clan.").update();
             }
         }
+    }
+
+    // Retry logic to handle transient failures
+    private boolean retryOperation(Runnable operation) {
+        int maxRetries = 3;
+        int retryDelay = 2000; // 2 seconds delay between retries
+
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                CompletableFuture<Void> result = CompletableFuture.runAsync(operation);
+                result.join(); // Block until the operation completes
+                return true; // Operation successful
+            } catch (Exception e) {
+                if (attempt == maxRetries) {
+                    return false; // Max retries reached, return failure
+                }
+                try {
+                    Thread.sleep(retryDelay); // Wait before retrying
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt(); // Restore interrupted state
+                }
+            }
+        }
+        return false; // Should not reach here
     }
 }

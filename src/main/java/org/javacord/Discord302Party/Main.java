@@ -77,6 +77,7 @@ public class Main {
         api.addSlashCommandCreateListener(new ViewRankRequirementsCommand());
         api.addSlashCommandCreateListener(new DeleteRankRequirementsCommand());
         api.addSlashCommandCreateListener(new RunUpdatersCommand(updater, rankRequirementUpdater));
+        api.addSlashCommandCreateListener(new VerifyAllUsersCommand());
 
         // Log a message, if the bot joined or left a server
         api.addServerJoinListener(event -> logger.info("Joined server " + event.getServer().getName()));
@@ -195,6 +196,13 @@ public class Main {
                 .setName("run_updaters")
                 .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
                 .setDescription("Manually run the WOMGroupUpdater and RankRequirementUpdater.")
+                .createForServer(api.getServerById(guildId).get()).join();
+
+        // Register the "verify_all_users" command
+        new SlashCommandBuilder()
+                .setName("verify_all_users")
+                .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
+                .setDescription("Manually verify all discord roles to the database.")
                 .createForServer(api.getServerById(guildId).get()).join();
 
 
