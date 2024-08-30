@@ -9,13 +9,15 @@ public class Member {
     private String rank;
     private Timestamp rankObtainedTimestamp;
     private Timestamp joinDate;
+    private String temporaryRank;  // New attribute for temporary rank
 
-    public Member(int WOMId, String username, String rank, Timestamp rankObtainedTimestamp, Timestamp joinDate) {
+    public Member(int WOMId, String username, String rank, Timestamp rankObtainedTimestamp, Timestamp joinDate, String temporaryRank) {
         this.WOMId = WOMId;
         this.username = username;
         this.rank = rank;
         this.rankObtainedTimestamp = rankObtainedTimestamp;
         this.joinDate = joinDate;
+        this.temporaryRank = temporaryRank;  // Initialize temporary rank
     }
 
     public int getWOMId() {
@@ -38,6 +40,10 @@ public class Member {
         return joinDate;
     }
 
+    public String getTemporaryRank() {
+        return temporaryRank;
+    }
+
     public void setWOMId(int WOMId) {
         this.WOMId = WOMId;
     }
@@ -56,5 +62,9 @@ public class Member {
 
     public void setJoinDate(Timestamp joinDate) {
         this.joinDate = joinDate;
+    }
+
+    public void setTemporaryRank(String temporaryRank) {
+        this.temporaryRank = temporaryRank;
     }
 }

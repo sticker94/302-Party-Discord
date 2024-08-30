@@ -12,7 +12,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.sql.Timestamp;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,11 +22,18 @@ public class WOMClientService {
     private static final String API_KEY = dotenv.get("WOM_API_KEY");
     private static final String USER_AGENT = dotenv.get("DISCORD_NAME");
     private static final String BASE_URL = "https://api.wiseoldman.net/v2";
+    private static final String DB_URL = "jdbc:mysql://" + dotenv.get("DB_HOST") + ":3306/" + dotenv.get("DB_NAME");
+    private static final String USER = dotenv.get("DB_USER");
+    private static final String PASS = dotenv.get("DB_PASS");
+
+    private Connection connect() throws SQLException {
+        return DriverManager.getConnection(DB_URL, USER, PASS);
+    }
 
     public List<Member> getGroupMembers(int groupId) {
         String endpoint = String.format("/groups/%d", groupId);
         String jsonResponse = sendGetRequest(endpoint);
-        logger.info (jsonResponse);
+        logger.info(jsonResponse);
         return parseGroupMembers(jsonResponse);
     }
 
@@ -60,7 +67,7 @@ public class WOMClientService {
 
     public List<Member> parseGroupMembers(String jsonResponse) {
         List<Member> members = new ArrayList<>();
-        try {
+        try (Connection connection = connect()) {
             ObjectMapper objectMapper = new ObjectMapper();
             JsonNode root = objectMapper.readTree(jsonResponse);
 
@@ -75,7 +82,10 @@ public class WOMClientService {
                     Timestamp rankObtainedTimestamp = Timestamp.valueOf(membership.get("updatedAt").asText().replace("T", " ").replace("Z", ""));
                     Timestamp joinDate = Timestamp.valueOf(membership.get("createdAt").asText().replace("T", " ").replace("Z", ""));
 
-                    members.add(new Member(WOMId, username, rank, rankObtainedTimestamp, joinDate));
+                    // Get the temporary rank if it exists
+                    String temporaryRank = getTemporaryRank(connection, username);
+
+                    members.add(new Member(WOMId, username, rank, rankObtainedTimestamp, joinDate, temporaryRank));
                 }
             }
 
@@ -83,5 +93,20 @@ public class WOMClientService {
             logger.error("Error parsing JSON response: " + e.getMessage());
         }
         return members;
+    }
+
+    private String getTemporaryRank(Connection connection, String username) {
+        String temporaryRank = null;
+        String query = "SELECT rank FROM temporary_ranks WHERE discord_uid = (SELECT discord_uid FROM discord_users WHERE character_name = ?)";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setString(1, username);
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                temporaryRank = rs.getString("rank");
+            }
+        } catch (SQLException e) {
+            logger.error("Error retrieving temporary rank for user: " + username, e);
+        }
+        return temporaryRank;
     }
 }

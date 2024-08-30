@@ -190,7 +190,7 @@ public class NameCommand implements SlashCommandCreateListener {
                     updater.setContent("Rank not found for your character.").update();
                 }
             } else {
-                updater.setContent("You are not a member of the clan.").update();
+                updater.setContent("You are not a member of the clan. If you recently joined, ask a mod to manually refresh.").update();
             }
         }
     }

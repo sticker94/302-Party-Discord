@@ -176,13 +176,21 @@ public class WOMGroupUpdater {
             return; // Skip if no Discord UID found
         }
 
+        // Check if this rank is a temporary rank
+        boolean isTemporaryRank = isTemporaryRank(member.getRank());
         String currentRank = findCurrentRank(connection, discordUid);
-        if (currentRank != null && !currentRank.equalsIgnoreCase(member.getRank())) {
-            // Update the rank in the discord_users table
-            updateRankInDatabase(connection, discordUid, member.getRank());
 
-            // Update the Discord roles
-            updateDiscordRoles(discordUid, member.getRank());
+        if (currentRank != null && !currentRank.equalsIgnoreCase(member.getRank())) {
+            if (isTemporaryRank) {
+                // If it's a temporary rank, update the temporary ranks table and skip normal rank update
+                updateTemporaryRankInDatabase(connection, discordUid, member.getRank());
+            } else {
+                // Update the rank in the discord_users table
+                updateRankInDatabase(connection, discordUid, member.getRank());
+
+                // Update the Discord roles
+                updateDiscordRoles(discordUid, member.getRank());
+            }
         }
 
         // Continue with the existing database updates
@@ -237,6 +245,9 @@ public class WOMGroupUpdater {
                     }
                 }
             }
+
+            // Handle removing expired temporary ranks
+            removeExpiredTemporaryRanks(connection);
 
         } catch (Exception e) {
             logger.error("Error fetching group activity from Wise Old Man API", e);
@@ -301,6 +312,17 @@ public class WOMGroupUpdater {
             stmt.setString(2, discordUid);
             stmt.executeUpdate();
             logger.info("Updated rank to " + newRank + " for Discord UID: " + discordUid);
+        }
+    }
+
+    private void updateTemporaryRankInDatabase(Connection connection, String discordUid, String newRank) throws SQLException {
+        String insertSql = "INSERT INTO temporary_ranks (discord_uid, rank) VALUES (?, ?) " +
+                "ON DUPLICATE KEY UPDATE rank = VALUES(rank), added_date = CURRENT_TIMESTAMP";
+        try (PreparedStatement stmt = connection.prepareStatement(insertSql)) {
+            stmt.setString(1, discordUid);
+            stmt.setString(2, newRank);
+            stmt.executeUpdate();
+            logger.info("Updated temporary rank to " + newRank + " for Discord UID: " + discordUid);
         }
     }
 
@@ -416,6 +438,20 @@ public class WOMGroupUpdater {
         }
     }
 
+    private void removeExpiredTemporaryRanks(Connection connection) {
+        try {
+            String query = "DELETE FROM temporary_ranks WHERE added_date < (NOW() - INTERVAL 1 MONTH)";
+            try (PreparedStatement stmt = connection.prepareStatement(query)) {
+                int rowsDeleted = stmt.executeUpdate();
+                if (rowsDeleted > 0) {
+                    logger.info("Removed expired temporary ranks.");
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("Error removing expired temporary ranks.", e);
+        }
+    }
+
     private boolean isRankRole(String roleName) {
         try (Connection connection = connect()) {
             String query = "SELECT COUNT(*) FROM config WHERE rank = ?";
@@ -444,6 +480,21 @@ public class WOMGroupUpdater {
             }
         }
         return null;
+    }
+
+    private boolean isTemporaryRank(String rank) {
+        // Here we check if the rank is in the list of known temporary ranks
+        String[] temporaryRanks = {"monarch", "competitor", "attacker", "enforcer", "defender", "ranger", "priest",
+                "magician", "runecrafter", "medic", "athlete", "herbologist", "thief", "crafter",
+                "fletcher", "miner", "smith", "fisher", "cook", "firemaker", "lumberjack", "slayer",
+                "farmer", "constructor", "hunter", "skiller"};
+
+        for (String tempRank : temporaryRanks) {
+            if (tempRank.equalsIgnoreCase(rank)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Connection connect() throws SQLException {

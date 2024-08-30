@@ -311,4 +311,22 @@ public class RankRequirementUpdater {
         }
         return false;
     }
+
+    private boolean isTemporaryRank(String rank) {
+        String[] temporaryRanks = {"monarch", "competitor", "attacker", "enforcer", "defender", "ranger", "priest", "magician", "runecrafter", "medic", "athlete", "herbologist", "thief", "crafter", "fletcher", "miner", "smith", "fisher", "cook", "firemaker", "lumberjack", "slayer", "farmer", "constructor", "hunter", "skiller"};
+        for (String tempRank : temporaryRanks) {
+            if (tempRank.equalsIgnoreCase(rank)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void removeTemporaryRank(Connection connection, String discordUid) throws SQLException {
+        String deleteSql = "DELETE FROM temporary_ranks WHERE discord_uid = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(deleteSql)) {
+            stmt.setString(1, discordUid);
+            stmt.executeUpdate();
+        }
+    }
 }
