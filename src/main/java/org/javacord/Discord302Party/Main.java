@@ -5,7 +5,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.javacord.Discord302Party.command.*;
 import org.javacord.Discord302Party.service.RankRequirementUpdater;
-import org.javacord.Discord302Party.service.WOMClientService;
 import org.javacord.Discord302Party.service.WOMGroupUpdater;
 import org.javacord.api.DiscordApi;
 import org.javacord.api.DiscordApiBuilder;
@@ -42,19 +41,16 @@ public class Main {
                 .setAllIntents() // Enable all intents for the bot
                 .login().join();
 
-        // Create an invite link with administrator permissions
+        // Create an invitation link with administrator permissions
         Permissions permissions = new PermissionsBuilder()
                 .setAllowed(PermissionType.ADMINISTRATOR)
                 .build();
         String inviteUrl = api.createBotInvite(permissions);
-        logger.info("You can invite me by using the following url: " + inviteUrl);
+        logger.info("You can invite me by using the following url: {}", inviteUrl);
 
         // Register commands for a specific guild (server)
         long guildId = Long.parseLong(dotenv.get("GUILD_ID"));
         /*  removeExistingCommands(api, guildId); */
-
-        // Set up WOMClientService
-        WOMClientService womClientService = new WOMClientService();
 
         // Initialize and start WOMGroupUpdater
         WOMGroupUpdater updater = new WOMGroupUpdater(api);
@@ -80,20 +76,18 @@ public class Main {
         api.addSlashCommandCreateListener(new VerifyAllUsersCommand());
 
         // Log a message, if the bot joined or left a server
-        api.addServerJoinListener(event -> logger.info("Joined server " + event.getServer().getName()));
-        api.addServerLeaveListener(event -> logger.info("Left server " + event.getServer().getName()));
+        api.addServerJoinListener(event -> logger.info("Joined server {}", event.getServer().getName()));
+        api.addServerLeaveListener(event -> logger.info("Left server {}", event.getServer().getName()));
     }
 
     private static void removeExistingCommands(DiscordApi api, long guildId) {
-        api.getServerById(guildId).ifPresent(guild -> {
-            guild.getSlashCommands().thenAccept(commands -> {
-                commands.forEach(command -> {
-                    command.deleteForServer(guildId); // Delete each command
-                    logger.info("Deleted command: " + command.getName());
-                });
-                logger.info("All guild commands have been deleted.");
+        api.getServerById(guildId).ifPresent(guild -> guild.getSlashCommands().thenAccept(commands -> {
+            commands.forEach(command -> {
+                command.deleteForServer(guildId); // Delete each command
+                logger.info("Deleted command: {}", command.getName());
             });
-        });
+            logger.info("All guild commands have been deleted.");
+        }));
     }
 
     private static void registerCommands(DiscordApi api, long guildId) {
@@ -206,6 +200,6 @@ public class Main {
                 .createForServer(api.getServerById(guildId).get()).join();
 
 
-        logger.info("Commands registered for guild: " + guildId);
+        logger.info("Commands registered for guild: {}", guildId);
     }
 }

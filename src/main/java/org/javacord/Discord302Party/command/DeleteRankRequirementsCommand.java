@@ -72,7 +72,7 @@ public class DeleteRankRequirementsCommand implements SlashCommandCreateListener
 
     private void deleteRequirement(User user, String rank, String requirementType) {
         try (Connection connection = connect()) {
-            String sql = "DELETE FROM rank_requirements WHERE rank = ? AND requirement_type = ?";
+            String sql = "DELETE FROM rank_requirements WHERE `rank` = ? AND requirement_type = ?";
             try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
                 preparedStatement.setString(1, rank);
                 preparedStatement.setString(2, requirementType);
@@ -85,7 +85,7 @@ public class DeleteRankRequirementsCommand implements SlashCommandCreateListener
 
     private List<String> getRequirementTypesForRank(String rank) {
         List<String> types = new ArrayList<>();
-        String query = "SELECT requirement_type FROM rank_requirements WHERE rank = ?";
+        String query = "SELECT requirement_type FROM rank_requirements WHERE `rank` = ?";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, rank);

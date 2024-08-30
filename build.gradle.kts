@@ -29,5 +29,5 @@ dependencies {
 }
 
 application {
-    mainClass.set("org.javacord.examplebot.Main")
+    mainClass.set("org.javacord.Discord302Party.Main")
 }

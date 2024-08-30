@@ -50,7 +50,7 @@ public class RankRequirementUpdater {
     private void validateRequirementsForUser(String discordUid) {
         try (Connection connection = connect()) {
             // Retrieve the user's current rank
-            String currentRankQuery = "SELECT rank FROM members WHERE username = (SELECT character_name FROM discord_users WHERE discord_uid = ?)";
+            String currentRankQuery = "SELECT `rank` FROM members WHERE username = (SELECT character_name FROM discord_users WHERE discord_uid = ?)";
             String nextRankQuery = "SELECT r_next.rank " +
                     "FROM config r_current " +
                     "JOIN config r_next ON r_next.rank_order = (" +
@@ -108,7 +108,7 @@ public class RankRequirementUpdater {
 
     private void validateRankRequirements(String discordUid, String currentRank, String nextRank) {
         try (Connection connection = connect()) {
-            String query = "SELECT id, requirement_type, required_value FROM rank_requirements WHERE rank = ?";
+            String query = "SELECT id, requirement_type, required_value FROM rank_requirements WHERE `rank` = ?";
             try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
                 preparedStatement.setString(1, nextRank);
                 try (ResultSet resultSet = preparedStatement.executeQuery()) {
@@ -191,7 +191,7 @@ public class RankRequirementUpdater {
     }
 
     private void storeValidation(String discordUid, String rank, int requirementId) {
-        String insertSql = "INSERT INTO validation_log (character_name, rank, requirement_id, validated_by, validation_date) " +
+        String insertSql = "INSERT INTO validation_log (character_name, `rank`, requirement_id, validated_by, validation_date) " +
                 "VALUES ((SELECT character_name FROM discord_users WHERE discord_uid = ?), ?, ?, ?, NOW())";
 
         try (Connection connection = connect();
@@ -208,7 +208,7 @@ public class RankRequirementUpdater {
 
     public List<String> getAllRanks() {
         List<String> ranks = new ArrayList<>();
-        String query = "SELECT rank FROM config ORDER BY rank_order ASC";
+        String query = "SELECT `rank` FROM config ORDER BY rank_order ";
 
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query);
@@ -226,7 +226,7 @@ public class RankRequirementUpdater {
     }
 
     public boolean validatePointsRequirement(String discordUid, String currentRank, String nextRank, int pointsRequired) {
-        String query = "SELECT points FROM members WHERE username = (SELECT character_name FROM discord_users WHERE discord_uid = ?) AND rank = ?";
+        String query = "SELECT points FROM members WHERE username = (SELECT character_name FROM discord_users WHERE discord_uid = ?) AND `rank` = ?";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, discordUid);

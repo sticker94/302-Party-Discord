@@ -33,10 +33,10 @@ public class PointsCommand implements SlashCommandCreateListener {
             preparedStatement.setLong(1, discordUid);
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
-                logger.info("Character name found for Discord UID: " + discordUid);
+                logger.info("Character name found for Discord UID: {}", discordUid);
                 return resultSet.getString("character_name");
             } else {
-                logger.warn("No character name found for Discord UID: " + discordUid);
+                logger.warn("No character name found for Discord UID: {}", discordUid);
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while fetching character name: ", e);
@@ -51,10 +51,10 @@ public class PointsCommand implements SlashCommandCreateListener {
             preparedStatement.setString(1, characterName);
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
-                logger.info("Points found for character name: " + characterName);
+                logger.info("Points found for character name: {}", characterName);
                 return resultSet.getInt("points");
             } else {
-                logger.warn("No points found for character name: " + characterName);
+                logger.warn("No points found for character name: {}", characterName);
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while fetching user points: ", e);
@@ -69,10 +69,10 @@ public class PointsCommand implements SlashCommandCreateListener {
             preparedStatement.setString(1, characterName);
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
-                logger.info("Given points found for character name: " + characterName);
+                logger.info("Given points found for character name: {}", characterName);
                 return resultSet.getInt("given_points");
             } else {
-                logger.warn("No given points found for character name: " + characterName);
+                logger.warn("No given points found for character name: {}", characterName);
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while fetching user given points: ", e);
@@ -81,16 +81,16 @@ public class PointsCommand implements SlashCommandCreateListener {
     }
 
     private int getRankTotalPoints(String rank) {
-        String query = "SELECT total_points FROM config WHERE rank = ?";
+        String query = "SELECT total_points FROM config WHERE `rank` = ?";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, rank);
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
-                logger.info("Total points found for rank: " + rank);
+                logger.info("Total points found for rank: {}", rank);
                 return resultSet.getInt("total_points");
             } else {
-                logger.warn("No total points found for rank: " + rank);
+                logger.warn("No total points found for rank: {}", rank);
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while fetching rank total points: ", e);
@@ -99,16 +99,16 @@ public class PointsCommand implements SlashCommandCreateListener {
     }
 
     private String getUserRank(String characterName) {
-        String query = "SELECT rank FROM members WHERE username = ?";
+        String query = "SELECT `rank` FROM members WHERE username = ?";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, characterName);
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
-                logger.info("Rank found for character name: " + characterName);
+                logger.info("Rank found for character name: {}", characterName);
                 return resultSet.getString("rank");
             } else {
-                logger.warn("No rank found for character name: " + characterName);
+                logger.warn("No rank found for character name: {}", characterName);
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while fetching user rank: ", e);
@@ -124,9 +124,9 @@ public class PointsCommand implements SlashCommandCreateListener {
             preparedStatement.setString(2, characterName);
             int rowsUpdated = preparedStatement.executeUpdate();
             if (rowsUpdated > 0) {
-                logger.info("Successfully updated points for character name: " + characterName);
+                logger.info("Successfully updated points for character name: {}", characterName);
             } else {
-                logger.warn("No rows updated for character name: " + characterName);
+                logger.warn("No rows updated for character name: {}", characterName);
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while updating user points: ", e);
@@ -141,9 +141,9 @@ public class PointsCommand implements SlashCommandCreateListener {
             preparedStatement.setString(2, characterName);
             int rowsUpdated = preparedStatement.executeUpdate();
             if (rowsUpdated > 0) {
-                logger.info("Successfully updated given points for character name: " + characterName);
+                logger.info("Successfully updated given points for character name: {}", characterName);
             } else {
-                logger.warn("No rows updated for character name: " + characterName);
+                logger.warn("No rows updated for character name: {}", characterName);
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while updating user given points: ", e);
@@ -171,7 +171,7 @@ public class PointsCommand implements SlashCommandCreateListener {
         String channelId = getPointsChannelId();
         if (channelId != null) {
             server.getTextChannelById(channelId).ifPresent(channel -> {
-                logger.info("Posting points update to channel ID: " + channelId);
+                logger.info("Posting points update to channel ID: {}", channelId);
                 channel.sendMessage(message);
             });
         } else {
@@ -216,16 +216,16 @@ public class PointsCommand implements SlashCommandCreateListener {
             Optional<Long> pointsToGiveOpt = event.getSlashCommandInteraction().getOptionLongValueByName("points");
             String reason = event.getSlashCommandInteraction().getOptionStringValueByName("reason").orElse("No reason provided");
 
-            logger.info("Mentioned user: " + (mentionedUser != null ? mentionedUser.getDiscriminatedName() : "None"));
-            logger.info("Points to give: " + pointsToGiveOpt.orElse(0L));
-            logger.info("Reason: " + reason);
+            logger.info("Mentioned user: {}", mentionedUser != null ? mentionedUser.getDiscriminatedName() : "None");
+            logger.info("Points to give: {}", pointsToGiveOpt.orElse(0L));
+            logger.info("Reason: {}", reason);
 
             int pointsToGive = pointsToGiveOpt.map(Long::intValue).orElse(0);
 
             if (mentionedUser != null && pointsToGive > 0) {
                 // Handle giving points
                 String mentionedCharacterName = getCharacterNameByDiscordUid(mentionedUser.getId());
-                logger.info("Attempting to give points to: " + mentionedCharacterName);
+                logger.info("Attempting to give points to: {}", mentionedCharacterName);
 
                 if (mentionedCharacterName == null) {
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
@@ -240,7 +240,7 @@ public class PointsCommand implements SlashCommandCreateListener {
                 int totalPoints = getRankTotalPoints(userRank);
                 int availablePoints = totalPoints - givenPoints;
 
-                logger.info("User rank: " + userRank + ", Given points: " + givenPoints + ", Available points: " + availablePoints);
+                logger.info("User rank: {}, Given points: {}, Available points: {}", userRank, givenPoints, availablePoints);
 
                 if (availablePoints >= pointsToGive) {
                     // Update points for the mentioned user and giver

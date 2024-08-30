@@ -52,7 +52,7 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                         "    (rr.requirement_type != 'other' AND m.points >= rr.required_value) " +
                         "    OR (rr.requirement_type = 'other' AND vl.id IS NOT NULL) " +
                         "ORDER BY " +
-                        "    r_current.rank_order ASC;";
+                        "    r_current.rank_order;";
 
                 try (PreparedStatement preparedStatement = connection.prepareStatement(query);
                      ResultSet resultSet = preparedStatement.executeQuery()) {

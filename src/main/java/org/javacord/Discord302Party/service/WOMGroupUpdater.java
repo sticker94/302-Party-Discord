@@ -13,6 +13,7 @@ import org.javacord.api.util.logging.ExceptionLogger;
 
 import javax.net.ssl.HttpsURLConnection;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URL;
 import java.sql.*;
@@ -91,23 +92,7 @@ public class WOMGroupUpdater {
 
     private void checkAndUpdateNameChanges() {
         try {
-            String urlString = "https://api.wiseoldman.net/v2/groups/" + GROUP_ID + "/name-changes";
-            URL url = new URL(urlString);
-            HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("x-api-key", WOM_API_KEY);
-            conn.setRequestProperty("User-Agent", DISCORD_NAME);
-
-            BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-            String inputLine;
-            StringBuilder content = new StringBuilder();
-            while ((inputLine = in.readLine()) != null) {
-                content.append(inputLine);
-            }
-            in.close();
-
-            ObjectMapper objectMapper = new ObjectMapper();
-            JsonNode nameChanges = objectMapper.readTree(content.toString());
+            JsonNode nameChanges = getNameChanges("/name-changes");
 
             try (Connection connection = connect()) {
                 for (JsonNode nameChange : nameChanges) {
@@ -140,7 +125,7 @@ public class WOMGroupUpdater {
             stmt.setString(1, oldName);
             stmt.setString(2, newName);
             stmt.executeUpdate();
-            logger.info("Stored name change from " + oldName + " to " + newName);
+            logger.info("Stored name change from {} to {}", oldName, newName);
         }
     }
 
@@ -165,7 +150,7 @@ public class WOMGroupUpdater {
             stmt.setString(2, oldName);
             int rowsUpdated = stmt.executeUpdate();
             if (rowsUpdated > 0) {
-                logger.info("Updated username from " + oldName + " to " + newName);
+                logger.info("Updated username from {} to {}", oldName, newName);
             }
         }
     }
@@ -202,23 +187,7 @@ public class WOMGroupUpdater {
 
     private void updateMembersBasedOnActivity(Connection connection) {
         try {
-            String urlString = "https://api.wiseoldman.net/v2/groups/" + GROUP_ID + "/activity";
-            URL url = new URL(urlString);
-            HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("x-api-key", WOM_API_KEY);
-            conn.setRequestProperty("User-Agent", DISCORD_NAME);
-
-            BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-            String inputLine;
-            StringBuilder content = new StringBuilder();
-            while ((inputLine = in.readLine()) != null) {
-                content.append(inputLine);
-            }
-            in.close();
-
-            ObjectMapper objectMapper = new ObjectMapper();
-            JsonNode activityEvents = objectMapper.readTree(content.toString());
+            JsonNode activityEvents = getNameChanges("/activity");
 
             for (JsonNode event : activityEvents) {
                 String username = event.get("player").get("username").asText();
@@ -254,6 +223,26 @@ public class WOMGroupUpdater {
         }
     }
 
+    private static JsonNode getNameChanges(String x) throws IOException {
+        String urlString = "https://api.wiseoldman.net/v2/groups/" + GROUP_ID + x;
+        URL url = new URL(urlString);
+        HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        conn.setRequestProperty("x-api-key", WOM_API_KEY);
+        conn.setRequestProperty("User-Agent", DISCORD_NAME);
+
+        BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+        String inputLine;
+        StringBuilder content = new StringBuilder();
+        while ((inputLine = in.readLine()) != null) {
+            content.append(inputLine);
+        }
+        in.close();
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        return objectMapper.readTree(content.toString());
+    }
+
     private boolean isMemberInDatabase(Connection connection, String username) throws SQLException {
         String query = "SELECT COUNT(*) FROM members WHERE username = ?";
         try (PreparedStatement stmt = connection.prepareStatement(query)) {
@@ -268,14 +257,14 @@ public class WOMGroupUpdater {
     }
 
     private void addMemberToDatabase(Connection connection, String username, int womId, String role, Timestamp joinDate) throws SQLException {
-        String insertSql = "INSERT INTO members (username, rank, WOM_id, joinDate, last_rank_update, last_WOM_update) VALUES (?, ?, ?, ?, NOW(), NOW())";
+        String insertSql = "INSERT INTO members (username, `rank`, WOM_id, joinDate, last_rank_update, last_WOM_update) VALUES (?, ?, ?, ?, NOW(), NOW())";
         try (PreparedStatement stmt = connection.prepareStatement(insertSql)) {
             stmt.setString(1, username);
             stmt.setString(2, role);
             stmt.setInt(3, womId);
             stmt.setTimestamp(4, joinDate);
             stmt.executeUpdate();
-            logger.info("Added new member " + username + " to the members table.");
+            logger.info("Added new member {} to the members table.", username);
         }
     }
 
@@ -293,7 +282,7 @@ public class WOMGroupUpdater {
     }
 
     private String findCurrentRank(Connection connection, String discordUid) throws SQLException {
-        String query = "SELECT rank FROM discord_users WHERE discord_uid = ?";
+        String query = "SELECT `rank` FROM discord_users WHERE discord_uid = ?";
         try (PreparedStatement stmt = connection.prepareStatement(query)) {
             stmt.setString(1, discordUid);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -306,23 +295,23 @@ public class WOMGroupUpdater {
     }
 
     private void updateRankInDatabase(Connection connection, String discordUid, String newRank) throws SQLException {
-        String updateSql = "UPDATE discord_users SET rank = ? WHERE discord_uid = ?";
+        String updateSql = "UPDATE discord_users SET `rank` = ? WHERE discord_uid = ?";
         try (PreparedStatement stmt = connection.prepareStatement(updateSql)) {
             stmt.setString(1, newRank);
             stmt.setString(2, discordUid);
             stmt.executeUpdate();
-            logger.info("Updated rank to " + newRank + " for Discord UID: " + discordUid);
+            logger.info("Updated rank to {} for Discord UID: {}", newRank, discordUid);
         }
     }
 
     private void updateTemporaryRankInDatabase(Connection connection, String discordUid, String newRank) throws SQLException {
-        String insertSql = "INSERT INTO temporary_ranks (discord_uid, rank) VALUES (?, ?) " +
-                "ON DUPLICATE KEY UPDATE rank = VALUES(rank), added_date = CURRENT_TIMESTAMP";
+        String insertSql = "INSERT INTO temporary_ranks (discord_uid, `rank`) VALUES (?, ?) " +
+                "ON DUPLICATE KEY UPDATE `rank` = VALUES(rank), added_date = CURRENT_TIMESTAMP";
         try (PreparedStatement stmt = connection.prepareStatement(insertSql)) {
             stmt.setString(1, discordUid);
             stmt.setString(2, newRank);
             stmt.executeUpdate();
-            logger.info("Updated temporary rank to " + newRank + " for Discord UID: " + discordUid);
+            logger.info("Updated temporary rank to {} for Discord UID: {}", newRank, discordUid);
         }
     }
 
@@ -348,16 +337,16 @@ public class WOMGroupUpdater {
             Optional<org.javacord.api.entity.permission.Role> newRole = server.getRolesByNameIgnoreCase(newRank).stream().findFirst();
             newRole.ifPresent(role -> {
                 user.addRole(role).exceptionally(ExceptionLogger.get());
-                logger.info("Assigned new role: " + role.getName() + " to user: " + user.getName());
+                logger.info("Assigned new role: {} to user: {}", role.getName(), user.getName());
             });
         } else {
-            logger.warn("User not found on the server: " + discordUid);
+            logger.warn("User not found on the server: {}", discordUid);
         }
     }
 
     private boolean hasRankChanged(Member member) {
         try (Connection connection = connect()) {
-            String query = "SELECT rank FROM members WHERE WOM_id = ?";
+            String query = "SELECT `rank` FROM members WHERE WOM_id = ?";
             try (PreparedStatement stmt = connection.prepareStatement(query)) {
                 stmt.setInt(1, member.getWOMId());
                 try (ResultSet rs = stmt.executeQuery()) {
@@ -368,28 +357,28 @@ public class WOMGroupUpdater {
                 }
             }
         } catch (SQLException e) {
-            logger.error("Error checking if rank has changed for user: " + member.getUsername(), e);
+            logger.error("Error checking if rank has changed for user: {}", member.getUsername(), e);
         }
         return false;
     }
 
     private void updateMemberRank(Connection connection, Member member) throws SQLException {
-        String sql = "UPDATE members SET rank = ?, last_rank_update = NOW() WHERE username = ? AND WOM_id = ?";
+        String sql = "UPDATE members SET `rank` = ?, last_rank_update = NOW() WHERE username = ? AND WOM_id = ?";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setString(1, member.getRank());
             stmt.setString(2, member.getUsername());
             stmt.setInt(3, member.getWOMId());
             int rowsUpdated = stmt.executeUpdate();
             if (rowsUpdated > 0) {
-                logger.info("Successfully updated rank for user: " + member.getUsername());
+                logger.info("Successfully updated rank for user: {}", member.getUsername());
             } else {
-                logger.warn("Failed to update rank for user: " + member.getUsername());
+                logger.warn("Failed to update rank for user: {}", member.getUsername());
             }
         }
     }
 
     private void logRankHistory(Connection connection, Member member) throws SQLException {
-        String sql = "INSERT INTO rank_history (WOM_id, username, rank, rank_obtained_timestamp, rank_pulled_timestamp) " +
+        String sql = "INSERT INTO rank_history (WOM_id, username, `rank`, rank_obtained_timestamp, rank_pulled_timestamp) " +
                 "VALUES (?, ?, ?, ?, NOW())";
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setInt(1, member.getWOMId());
@@ -406,9 +395,9 @@ public class WOMGroupUpdater {
             stmt.setString(1, username);
             int rowsDeleted = stmt.executeUpdate();
             if (rowsDeleted > 0) {
-                logger.info("Deleted member " + username + " from the members table.");
+                logger.info("Deleted member {} from the members table.", username);
             } else {
-                logger.warn("No member found with username " + username);
+                logger.warn("No member found with username {}", username);
             }
         }
     }
@@ -432,9 +421,9 @@ public class WOMGroupUpdater {
             Optional<org.javacord.api.entity.permission.Role> greenPartyHatsRole = server.getRolesByNameIgnoreCase("Green Party Hats").stream().findFirst();
             greenPartyHatsRole.ifPresent(role -> user.removeRole(role).exceptionally(ExceptionLogger.get()));
 
-            logger.info("Removed roles from user: " + username);
+            logger.info("Removed roles from user: {}", username);
         } else {
-            logger.warn("User not found on the server: " + username);
+            logger.warn("User not found on the server: {}", username);
         }
     }
 
@@ -454,7 +443,7 @@ public class WOMGroupUpdater {
 
     private boolean isRankRole(String roleName) {
         try (Connection connection = connect()) {
-            String query = "SELECT COUNT(*) FROM config WHERE rank = ?";
+            String query = "SELECT COUNT(*) FROM config WHERE `rank` = ?";
             try (PreparedStatement stmt = connection.prepareStatement(query)) {
                 stmt.setString(1, roleName);
                 try (ResultSet rs = stmt.executeQuery()) {
@@ -464,13 +453,13 @@ public class WOMGroupUpdater {
                 }
             }
         } catch (SQLException e) {
-            logger.error("Error checking if role is a rank role: " + roleName, e);
+            logger.error("Error checking if role is a rank role: {}", roleName, e);
         }
         return false;
     }
 
     private String getMemberRank(Connection connection, String username) throws SQLException {
-        String query = "SELECT rank FROM members WHERE username = ?";
+        String query = "SELECT `rank` FROM members WHERE username = ?";
         try (PreparedStatement stmt = connection.prepareStatement(query)) {
             stmt.setString(1, username);
             try (ResultSet rs = stmt.executeQuery()) {

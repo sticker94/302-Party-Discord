@@ -33,7 +33,7 @@ public class ValidateRankRequirementsCommand implements SlashCommandCreateListen
 
                 if (characterName != null) {
                     try (Connection connection = connect()) {
-                        String query = "INSERT INTO validation_log (character_name, rank, validated_by) VALUES (?, ?, ?)";
+                        String query = "INSERT INTO validation_log (character_name, `rank`, validated_by) VALUES (?, ?, ?)";
                         try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
                             preparedStatement.setString(1, characterName);
                             preparedStatement.setString(2, rank);

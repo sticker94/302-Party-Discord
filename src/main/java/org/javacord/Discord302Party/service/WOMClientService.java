@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -39,18 +40,7 @@ public class WOMClientService {
 
     private String sendGetRequest(String endpoint) {
         try {
-            URL url = new URL(BASE_URL + endpoint);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-
-            // Set request properties
-            connection.setRequestMethod("GET");
-            connection.setRequestProperty("User-Agent", USER_AGENT);
-            if (API_KEY != null) {
-                connection.setRequestProperty("x-api-key", API_KEY);
-            }
-
-            // Get the response
-            BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            BufferedReader in = getIn(endpoint);
             String inputLine;
             StringBuilder content = new StringBuilder();
             while ((inputLine = in.readLine()) != null) {
@@ -60,9 +50,24 @@ public class WOMClientService {
 
             return content.toString();
         } catch (Exception e) {
-            logger.error("Error sending GET request to Wise Old Man API: " + e.getMessage());
+            logger.error("Error sending GET request to Wise Old Man API: {}", e.getMessage());
             return null;
         }
+    }
+
+    private static BufferedReader getIn(String endpoint) throws IOException {
+        URL url = new URL(BASE_URL + endpoint);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+        // Set request properties
+        connection.setRequestMethod("GET");
+        connection.setRequestProperty("User-Agent", USER_AGENT);
+        if (API_KEY != null) {
+            connection.setRequestProperty("x-api-key", API_KEY);
+        }
+
+        // Get the response
+        return new BufferedReader(new InputStreamReader(connection.getInputStream()));
     }
 
     public List<Member> parseGroupMembers(String jsonResponse) {
@@ -90,14 +95,14 @@ public class WOMClientService {
             }
 
         } catch (Exception e) {
-            logger.error("Error parsing JSON response: " + e.getMessage());
+            logger.error("Error parsing JSON response: {}", e.getMessage());
         }
         return members;
     }
 
     private String getTemporaryRank(Connection connection, String username) {
         String temporaryRank = null;
-        String query = "SELECT rank FROM temporary_ranks WHERE discord_uid = (SELECT discord_uid FROM discord_users WHERE character_name = ?)";
+        String query = "SELECT `rank` FROM temporary_ranks WHERE discord_uid = (SELECT discord_uid FROM discord_users WHERE character_name = ?)";
         try (PreparedStatement stmt = connection.prepareStatement(query)) {
             stmt.setString(1, username);
             ResultSet rs = stmt.executeQuery();
@@ -105,7 +110,7 @@ public class WOMClientService {
                 temporaryRank = rs.getString("rank");
             }
         } catch (SQLException e) {
-            logger.error("Error retrieving temporary rank for user: " + username, e);
+            logger.error("Error retrieving temporary rank for user: {}", username, e);
         }
         return temporaryRank;
     }

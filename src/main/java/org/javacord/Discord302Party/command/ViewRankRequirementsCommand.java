@@ -14,7 +14,7 @@ import org.javacord.api.listener.interaction.SlashCommandCreateListener;
 
 import java.sql.*;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public class ViewRankRequirementsCommand implements SlashCommandCreateListener {
@@ -32,7 +32,7 @@ public class ViewRankRequirementsCommand implements SlashCommandCreateListener {
 
     private List<String> getAllRanks() {
         List<String> ranks = new ArrayList<>();
-        String query = "SELECT rank FROM config ORDER BY rank_order";
+        String query = "SELECT `rank` FROM config ORDER BY rank_order";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query);
              ResultSet resultSet = preparedStatement.executeQuery()) {
@@ -49,9 +49,9 @@ public class ViewRankRequirementsCommand implements SlashCommandCreateListener {
         try (Connection connection = connect()) {
             String query;
             if (selectedRank != null) {
-                query = "SELECT rank, requirement_type, required_value FROM rank_requirements WHERE rank = ? ORDER BY rank";
+                query = "SELECT `rank`, requirement_type, required_value FROM rank_requirements WHERE `rank` = ? ORDER BY `rank`";
             } else {
-                query = "SELECT rank, requirement_type, required_value FROM rank_requirements ORDER BY rank";
+                query = "SELECT `rank`, requirement_type, required_value FROM rank_requirements ORDER BY `rank`";
             }
 
             try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
@@ -107,13 +107,13 @@ public class ViewRankRequirementsCommand implements SlashCommandCreateListener {
 
         SlashCommand command =
                 SlashCommand.with("view_rank_requirements", "View all the rank requirements",
-                        Arrays.asList(
-                                SlashCommandOption.createWithOptions(SlashCommandOptionType.SUB_COMMAND, "view", "View requirements",
-                                        Arrays.asList(
-                                                SlashCommandOption.createWithChoices(SlashCommandOptionType.STRING, "rank", "Select a rank to view its requirements", false, rankChoices)
+                                Collections.singletonList(
+                                        SlashCommandOption.createWithOptions(SlashCommandOptionType.SUB_COMMAND, "view", "View requirements",
+                                                Collections.singletonList(
+                                                        SlashCommandOption.createWithChoices(SlashCommandOptionType.STRING, "rank", "Select a rank to view its requirements", false, rankChoices)
+                                                )
                                         )
-                                )
-                        ))
+                                ))
                         .createForServer(api.getServerById(guildId).get())
                         .join();
     }

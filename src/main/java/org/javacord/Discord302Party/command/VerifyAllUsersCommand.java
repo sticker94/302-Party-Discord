@@ -29,7 +29,7 @@ public class VerifyAllUsersCommand implements SlashCommandCreateListener {
     }
 
     private String getRank(String characterName) {
-        String query = "SELECT rank FROM members WHERE REPLACE(username, '_', ' ') = ?";
+        String query = "SELECT `rank` FROM members WHERE REPLACE(username, '_', ' ') = ?";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, characterName);
