@@ -139,7 +139,7 @@ public class NameCommand implements SlashCommandCreateListener {
                 if (greenPartyHatsRole != null) {
                     if (!user.getRoles(server).contains(greenPartyHatsRole)) {
                         try {
-                            Thread.sleep(50);  // Introduce a short delay to avoid timing issues
+                            Thread.sleep(200);  // Introduce a short delay to avoid timing issues
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         }
@@ -168,7 +168,7 @@ public class NameCommand implements SlashCommandCreateListener {
                     if (role != null) {
                         if (!user.getRoles(server).contains(role)) {
                             try {
-                                Thread.sleep(50);
+                                Thread.sleep(200);
                             } catch (InterruptedException e) {
                                 e.printStackTrace();
                             }

@@ -6,11 +6,13 @@ import org.apache.logging.log4j.Logger;
 import org.javacord.Discord302Party.command.*;
 import org.javacord.Discord302Party.service.RankRequirementUpdater;
 import org.javacord.Discord302Party.service.WOMGroupUpdater;
+import org.javacord.Discord302Party.utils.Utils;
 import org.javacord.api.DiscordApi;
 import org.javacord.api.DiscordApiBuilder;
 import org.javacord.api.entity.permission.PermissionType;
 import org.javacord.api.entity.permission.Permissions;
 import org.javacord.api.entity.permission.PermissionsBuilder;
+import org.javacord.api.entity.server.Server;
 import org.javacord.api.interaction.*;
 import org.javacord.api.util.logging.FallbackLoggerConfiguration;
 
@@ -50,7 +52,7 @@ public class Main {
 
         // Register commands for a specific guild (server)
         long guildId = Long.parseLong(dotenv.get("GUILD_ID"));
-        /*  removeExistingCommands(api, guildId); */
+        Server server = api.getServerById(guildId).orElseThrow(() -> new IllegalArgumentException("Guild not found!"));
 
         // Initialize and start WOMGroupUpdater
         WOMGroupUpdater updater = new WOMGroupUpdater(api);
@@ -60,9 +62,11 @@ public class Main {
         RankRequirementUpdater rankRequirementUpdater = new RankRequirementUpdater();
         rankRequirementUpdater.startUpdater();
 
-        registerCommands(api, guildId);
+        registerCommands(api, guildId, server);
 
-        // Add listeners
+        // Add listeners for Slash Commands and Select Menu interactions
+        ViewRankRequirementsCommand viewRankRequirementsCommand = new ViewRankRequirementsCommand();
+
         api.addSlashCommandCreateListener(new NameCommand());
         api.addSlashCommandCreateListener(new VerifyCommand());
         api.addSlashCommandCreateListener(new PointsCommand());
@@ -70,7 +74,8 @@ public class Main {
         api.addSlashCommandCreateListener(new CheckRankUpCommand());
         api.addSlashCommandCreateListener(new SetRankRequirementsCommand());
         api.addSlashCommandCreateListener(new ValidateRankRequirementsCommand());
-        api.addSlashCommandCreateListener(new ViewRankRequirementsCommand());
+        api.addSlashCommandCreateListener(viewRankRequirementsCommand);  // Register the view rank requirements command as both a SlashCommand and SelectMenu listener
+        api.addSelectMenuChooseListener(viewRankRequirementsCommand);   // Register the SelectMenuChooseListener
         api.addSlashCommandCreateListener(new DeleteRankRequirementsCommand());
         api.addSlashCommandCreateListener(new RunUpdatersCommand(updater, rankRequirementUpdater));
         api.addSlashCommandCreateListener(new VerifyAllUsersCommand());
@@ -90,7 +95,7 @@ public class Main {
         }));
     }
 
-    private static void registerCommands(DiscordApi api, long guildId) {
+    private static void registerCommands(DiscordApi api, long guildId, Server server) {
         RankRequirementUpdater rankRequirementUpdater = new RankRequirementUpdater();
         List<String> ranks = rankRequirementUpdater.getAllRanks();
 
@@ -101,47 +106,45 @@ public class Main {
                 .setDescription("Select a rank to view its requirements")
                 .setRequired(false);
 
-        // Add each rank as a choice to the rank option
+        // Add each rank as a choice to the rank option, including the custom emoji if available
         for (String rank : ranks) {
-            rankOptionBuilder.addChoice(SlashCommandOptionChoice.create(rank, rank));
+            String emoji = Utils.getCustomEmoji(rank);
+            String label = emoji != null ? emoji + " " + rank : rank;
+
+            // Ensure the label is within the 100-character limit
+            if (label.length() > 100) {
+                label = label.substring(0, 100);
+            }
+
+            rankOptionBuilder.addChoice(SlashCommandOptionChoice.create(label, rank));
         }
 
         // Register the "name" command
-        new SlashCommandBuilder()
-                .setName("name")
-                .setDescription("Link your OSRS character name")
+        SlashCommand.with("name", "Link your OSRS character name")
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "character", "Your OSRS character name", true))
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "verify" command
-        new SlashCommandBuilder()
-                .setName("verify")
-                .setDescription("Verify your Discord account with your Replit account.")
+        SlashCommand.with("verify", "Verify your Discord account with your Replit account.")
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "verification_key", "Your verification key", true))
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "points" command with optional user mention, points, and reason
-        new SlashCommandBuilder()
-                .setName("points")
-                .setDescription("Check your points or give points to another user with an optional reason.") // Shorten the description
+        SlashCommand.with("points", "Check your points or give points to another user with an optional reason.")
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.USER, "user", "The Discord user you want to give points to", false))
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.LONG, "points", "The amount of points you want to give", false))
-                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "reason", "The reason for giving points", false)) // Add the reason option
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "reason", "The reason for giving points", false))
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "config" command to set the points logging channel
-        new SlashCommandBuilder()
-                .setName("config")
-                .setDescription("Configure the bot settings. Requires Administrator privilege.")
+        SlashCommand.with("config", "Configure the bot settings. Requires Administrator privilege.")
                 .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.CHANNEL, "channel", "The channel where points transactions will be logged", true))
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "set_rank_requirements" command
-        new SlashCommandBuilder()
-                .setName("set_rank_requirements")
-                .setDescription("Set requirements for a rank")
-                .addOption(SetRankRequirementsCommand.createRankOption(rankRequirementUpdater)) // Use the populated rank option
+        SlashCommand.with("set_rank_requirements", "Set requirements for a rank")
+                .addOption(SetRankRequirementsCommand.createRankOption(rankRequirementUpdater))
                 .addOption(SlashCommandOption.createWithChoices(SlashCommandOptionType.STRING, "requirement_type", "Type of requirement", true,
                         Arrays.asList(
                                 SlashCommandOptionChoice.create("Points", "Points"),
@@ -157,46 +160,34 @@ public class Main {
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "validate_rank" command
-        new SlashCommandBuilder()
-                .setName("validate_rank")
-                .setDescription("Validate rank requirements for a user")
+        SlashCommand.with("validate_rank", "Validate rank requirements for a user")
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.USER, "user", "The user to validate", true))
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "rank", "The rank to validate for", true))
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "check_rank_up" command
-        new SlashCommandBuilder()
-                .setName("check_rank_up")
-                .setDescription("Check which users are waiting for a rank up")
+        SlashCommand.with("check_rank_up", "Check which users are waiting for a rank up")
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "view_rank_requirements" command
-        new SlashCommandBuilder()
-                .setName("view_rank_requirements")
-                .setDescription("View all the rank requirements")
-                .addOption(rankOptionBuilder.build()) // Use .build() to convert to SlashCommandOption
+        SlashCommand.with("view_rank_requirements", "View all the rank requirements")
+                .addOption(rankOptionBuilder.build())
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "delete_rank_requirement" command
-        new SlashCommandBuilder()
-                .setName("delete_rank_requirement")
-                .setDescription("Delete a rank requirement. Requires Manage Server permission.")
-                .addOption(rankOptionBuilder.build()) // Use .build() to convert to SlashCommandOption
+        SlashCommand.with("delete_rank_requirement", "Delete a rank requirement. Requires Manage Server permission.")
+                .addOption(rankOptionBuilder.build())
                 .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "run_updaters" command
-        new SlashCommandBuilder()
-                .setName("run_updaters")
+        SlashCommand.with("run_updaters", "Manually run the WOMGroupUpdater and RankRequirementUpdater.")
                 .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
-                .setDescription("Manually run the WOMGroupUpdater and RankRequirementUpdater.")
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "verify_all_users" command
-        new SlashCommandBuilder()
-                .setName("verify_all_users")
+        SlashCommand.with("verify_all_users", "Manually verify all discord roles to the database.")
                 .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
-                .setDescription("Manually verify all discord roles to the database.")
                 .createForServer(api.getServerById(guildId).get()).join();
 
 

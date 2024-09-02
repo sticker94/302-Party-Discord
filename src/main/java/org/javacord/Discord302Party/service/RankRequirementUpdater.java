@@ -1,5 +1,6 @@
 package org.javacord.Discord302Party.service;
 
+import org.javacord.Discord302Party.Member;
 import io.github.cdimascio.dotenv.Dotenv;
 
 import java.sql.*;
@@ -49,8 +50,8 @@ public class RankRequirementUpdater {
 
     private void validateRequirementsForUser(String discordUid) {
         try (Connection connection = connect()) {
-            // Retrieve the user's current rank
-            String currentRankQuery = "SELECT `rank` FROM members WHERE username = (SELECT character_name FROM discord_users WHERE discord_uid = ?)";
+            // Retrieve the user's current rank and username
+            String currentRankQuery = "SELECT `rank`, username FROM members WHERE username = (SELECT character_name FROM discord_users WHERE discord_uid = ?)";
             String nextRankQuery = "SELECT r_next.rank " +
                     "FROM config r_current " +
                     "JOIN config r_next ON r_next.rank_order = (" +
@@ -61,20 +62,22 @@ public class RankRequirementUpdater {
                     "WHERE r_current.rank = ?";
 
             String currentRank = null;
+            String characterName = null;
             String nextRank = null;
 
-            // Get the current rank
+            // Get the current rank and username
             try (PreparedStatement currentRankStmt = connection.prepareStatement(currentRankQuery)) {
                 currentRankStmt.setString(1, discordUid);
                 try (ResultSet rs = currentRankStmt.executeQuery()) {
                     if (rs.next()) {
                         currentRank = rs.getString("rank");
+                        characterName = rs.getString("username");
                     }
                 }
             }
 
             if (currentRank == null) {
-                System.err.println("User's current rank not found.");
+                // System.err.println("User's current rank not found. Discord UID: " + discordUid + ", Character Name: " + (characterName != null ? characterName : "Unknown"));
                 return;
             }
 
@@ -94,19 +97,22 @@ public class RankRequirementUpdater {
             }
 
             if (nextRank == null) {
-                System.err.println("Next rank not found for the current rank: " + currentRank);
+                System.err.println("Next rank not found for the current rank: " + currentRank + ", Character Name: " + characterName);
                 return;
             }
 
+            // Create a Member object
+            Member member = new Member(0, characterName, currentRank, null, null, null);
+
             // Validate requirements for the next rank
-            validateRankRequirements(discordUid, currentRank, nextRank);
+            validateRankRequirements(member, nextRank);
 
         } catch (SQLException e) {
             e.printStackTrace();
         }
     }
 
-    private void validateRankRequirements(String discordUid, String currentRank, String nextRank) {
+    private void validateRankRequirements(Member member, String nextRank) {
         try (Connection connection = connect()) {
             String query = "SELECT id, requirement_type, required_value FROM rank_requirements WHERE `rank` = ?";
             try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
@@ -121,8 +127,8 @@ public class RankRequirementUpdater {
                         // Check if the required value is a numeric value
                         if (requirementType.equals("Other")) {
                             // Handle "Other" requirements
-                            if (hasOtherRequirementBeenValidated(discordUid, requirementId)) {
-                                storeValidation(discordUid, nextRank, requirementId);
+                            if (hasOtherRequirementBeenValidated(member.getUsername(), requirementId)) {
+                                storeValidation(member.getUsername(), nextRank, requirementId);
                             }
                         } else {
                             int requiredValue;
@@ -137,28 +143,28 @@ public class RankRequirementUpdater {
                             // Proceed with numeric requirement validation
                             switch (requirementType) {
                                 case "Points":
-                                    if (validatePointsRequirement(discordUid, currentRank, nextRank, requiredValue)) {
-                                        storeValidation(discordUid, nextRank, requirementId);
+                                    if (validatePointsRequirement(member, nextRank, requiredValue)) {
+                                        storeValidation(member.getUsername(), nextRank, requirementId);
                                     }
                                     break;
                                 case "Points from X different players":
-                                    if (validatePointsFromDifferentPlayers(discordUid, requiredValue)) {
-                                        storeValidation(discordUid, nextRank, requirementId);
+                                    if (validatePointsFromDifferentPlayers(member, requiredValue)) {
+                                        storeValidation(member.getUsername(), nextRank, requirementId);
                                     }
                                     break;
                                 case "Points from X different ranks":
-                                    if (validatePointsFromDifferentRanks(discordUid, requiredValue)) {
-                                        storeValidation(discordUid, nextRank, requirementId);
+                                    if (validatePointsFromDifferentRanks(member, requiredValue)) {
+                                        storeValidation(member.getUsername(), nextRank, requirementId);
                                     }
                                     break;
                                 case "Time in Clan":
-                                    if (validateTimeInClan(discordUid, requiredValue)) {
-                                        storeValidation(discordUid, nextRank, requirementId);
+                                    if (validateTimeInClan(member, requiredValue)) {
+                                        storeValidation(member.getUsername(), nextRank, requirementId);
                                     }
                                     break;
                                 case "Time at Current Rank":
-                                    if (validateTimeAtCurrentRank(discordUid, requiredValue)) {
-                                        storeValidation(discordUid, nextRank, requirementId);
+                                    if (validateTimeAtCurrentRank(member, requiredValue)) {
+                                        storeValidation(member.getUsername(), nextRank, requirementId);
                                     }
                                     break;
                                 default:
@@ -174,11 +180,11 @@ public class RankRequirementUpdater {
         }
     }
 
-    private boolean hasOtherRequirementBeenValidated(String discordUid, int requirementId) {
-        String query = "SELECT COUNT(*) FROM validation_log WHERE character_name = (SELECT character_name FROM discord_users WHERE discord_uid = ?) AND requirement_id = ?";
+    private boolean hasOtherRequirementBeenValidated(String username, int requirementId) {
+        String query = "SELECT COUNT(*) FROM validation_log WHERE character_name = ? AND requirement_id = ?";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-            preparedStatement.setString(1, discordUid);
+            preparedStatement.setString(1, username);
             preparedStatement.setInt(2, requirementId);
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
@@ -190,13 +196,13 @@ public class RankRequirementUpdater {
         return false;
     }
 
-    private void storeValidation(String discordUid, String rank, int requirementId) {
+    private void storeValidation(String username, String rank, int requirementId) {
         String insertSql = "INSERT INTO validation_log (character_name, `rank`, requirement_id, validated_by, validation_date) " +
-                "VALUES ((SELECT character_name FROM discord_users WHERE discord_uid = ?), ?, ?, ?, NOW())";
+                "VALUES (?, ?, ?, ?, NOW())";
 
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(insertSql)) {
-            preparedStatement.setString(1, discordUid);
+            preparedStatement.setString(1, username);
             preparedStatement.setString(2, rank);
             preparedStatement.setInt(3, requirementId);
             preparedStatement.setString(4, "SYSTEM"); // Assuming 'SYSTEM' as validated_by in auto-validation, you can replace this with actual user ID if needed
@@ -225,12 +231,12 @@ public class RankRequirementUpdater {
         return ranks;
     }
 
-    public boolean validatePointsRequirement(String discordUid, String currentRank, String nextRank, int pointsRequired) {
-        String query = "SELECT points FROM members WHERE username = (SELECT character_name FROM discord_users WHERE discord_uid = ?) AND `rank` = ?";
+    public boolean validatePointsRequirement(Member member, String nextRank, int pointsRequired) {
+        String query = "SELECT points FROM members WHERE username = ? AND `rank` = ?";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-            preparedStatement.setString(1, discordUid);
-            preparedStatement.setString(2, currentRank);
+            preparedStatement.setString(1, member.getUsername());
+            preparedStatement.setString(2, member.getRank());
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
                 int points = resultSet.getInt("points");
@@ -242,11 +248,11 @@ public class RankRequirementUpdater {
         return false;
     }
 
-    public boolean validatePointsFromDifferentPlayers(String discordUid, int differentPlayers) {
-        String query = "SELECT COUNT(DISTINCT related_user) AS unique_players FROM points_transactions WHERE character_name = (SELECT character_name FROM discord_users WHERE discord_uid = ?) AND points_change > 0";
+    public boolean validatePointsFromDifferentPlayers(Member member, int differentPlayers) {
+        String query = "SELECT COUNT(DISTINCT related_user) AS unique_players FROM points_transactions WHERE character_name = ? AND points_change > 0";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-            preparedStatement.setString(1, discordUid);
+            preparedStatement.setString(1, member.getUsername());
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
                 int uniquePlayers = resultSet.getInt("unique_players");
@@ -258,15 +264,15 @@ public class RankRequirementUpdater {
         return false;
     }
 
-    public boolean validatePointsFromDifferentRanks(String discordUid, int differentRanks) {
+    public boolean validatePointsFromDifferentRanks(Member member, int differentRanks) {
         String query = "SELECT COUNT(DISTINCT r.rank) AS unique_ranks " +
                 "FROM points_transactions pt " +
                 "JOIN discord_users du ON pt.related_user = du.character_name " +
                 "JOIN config r ON du.rank = r.rank " +
-                "WHERE pt.character_name = (SELECT character_name FROM discord_users WHERE discord_uid = ?) AND pt.points_change > 0";
+                "WHERE pt.character_name = ? AND pt.points_change > 0";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-            preparedStatement.setString(1, discordUid);
+            preparedStatement.setString(1, member.getUsername());
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
                 int uniqueRanks = resultSet.getInt("unique_ranks");
@@ -278,12 +284,12 @@ public class RankRequirementUpdater {
         return false;
     }
 
-    public boolean validateTimeInClan(String discordUid, int requiredMonths) {
+    public boolean validateTimeInClan(Member member, int requiredMonths) {
         String query = "SELECT TIMESTAMPDIFF(MONTH, MIN(timestamp), NOW()) AS time_in_clan " +
-                "FROM points_transactions WHERE character_name = (SELECT character_name FROM discord_users WHERE discord_uid = ?)";
+                "FROM points_transactions WHERE character_name = ?";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-            preparedStatement.setString(1, discordUid);
+            preparedStatement.setString(1, member.getUsername());
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
                 int timeInClan = resultSet.getInt("time_in_clan");
@@ -295,12 +301,12 @@ public class RankRequirementUpdater {
         return false;
     }
 
-    public boolean validateTimeAtCurrentRank(String discordUid, int requiredMonths) {
+    public boolean validateTimeAtCurrentRank(Member member, int requiredMonths) {
         String query = "SELECT TIMESTAMPDIFF(MONTH, last_rank_update, NOW()) AS time_at_rank " +
-                "FROM members WHERE username = (SELECT character_name FROM discord_users WHERE discord_uid = ?)";
+                "FROM members WHERE username = ?";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-            preparedStatement.setString(1, discordUid);
+            preparedStatement.setString(1, member.getUsername());
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
                 int timeAtRank = resultSet.getInt("time_at_rank");

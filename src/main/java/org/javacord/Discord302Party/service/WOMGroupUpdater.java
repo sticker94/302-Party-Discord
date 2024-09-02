@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URL;
 import java.sql.*;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Timer;
@@ -187,40 +188,107 @@ public class WOMGroupUpdater {
 
     private void updateMembersBasedOnActivity(Connection connection) {
         try {
+            // Retrieve the last processed "updatedAt" timestamp
+            Timestamp lastProcessedTimestamp = getLastProcessedActivityTime(connection);
+
             JsonNode activityEvents = getNameChanges("/activity");
 
-            for (JsonNode event : activityEvents) {
-                String username = event.get("player").get("username").asText();
-                int womId = event.get("player").get("id").asInt();
+            // Check if the activityEvents is an array
+            if (activityEvents.isArray()) {
+                // Reverse the list to process from oldest to newest
+                List<JsonNode> activityList = activityEvents.findValues("updatedAt");
+                Collections.reverse(activityList);
 
-                if (event.get("type").asText().equals("left")) {
-                    // Fetch the rank of the player from the members table
-                    String rank = getMemberRank(connection, username);
+                for (JsonNode event : activityList) {
+                    logger.info("Processing event: {}", event.toString());
 
-                    if (rank != null) {
-                        // Remove the member from the database
-                        removeMemberFromDatabase(connection, username);
-
-                        // Remove their roles from Discord
-                        removeRolesFromDiscord(username, rank);
+                    JsonNode playerNode = event.get("player");
+                    if (playerNode == null) {
+                        logger.warn("Skipping event due to missing player node: {}", event.toString());
+                        continue;
                     }
-                } else if (event.get("type").asText().equals("joined")) {
-                    String role = event.get("role").asText();
-                    Timestamp joinDate = Timestamp.valueOf(event.get("createdAt").asText().replace("T", " ").replace("Z", ""));
 
-                    if (!isMemberInDatabase(connection, username)) {
-                        // Add the member to the database
-                        addMemberToDatabase(connection, username, womId, role, joinDate);
+                    String updatedAtStr = event.get("createdAt").asText();
+                    Timestamp updatedAt = Timestamp.valueOf(updatedAtStr.replace("T", " ").replace("Z", ""));
+
+                    // If the event is older or equal to the last processed timestamp, skip it
+                    if (updatedAt.before(lastProcessedTimestamp) || updatedAt.equals(lastProcessedTimestamp)) {
+                        continue;
                     }
+
+                    String username = playerNode.get("username").asText();
+                    int womId = playerNode.get("id").asInt();
+                    String eventType = event.get("type").asText();
+                    String role = event.hasNonNull("role") ? event.get("role").asText() : null;
+                    Timestamp joinDate = event.has("createdAt") ? Timestamp.valueOf(event.get("createdAt").asText().replace("T", " ").replace("Z", "")) : null;
+
+                    Member member = new Member(womId, username, role, updatedAt, joinDate, null);
+
+                    switch (eventType) {
+                        case "left":
+                            handleMemberLeft(connection, member);
+                            break;
+                        case "joined":
+                            handleMemberJoined(connection, member);
+                            break;
+                        case "changed_role":
+                            handleMemberRoleChange(connection, member);
+                            break;
+                        default:
+                            logger.warn("Unhandled event type: {} for user: {}", eventType, username);
+                            break;
+                    }
+
+                    // Update the last processed timestamp
+                    updateLastProcessedActivityTime(connection, updatedAt);
                 }
+
+                // Handle removing expired temporary ranks
+                removeExpiredTemporaryRanks(connection);
+            } else {
+                logger.warn("Activity events are not in an array format: {}", activityEvents.toString());
             }
-
-            // Handle removing expired temporary ranks
-            removeExpiredTemporaryRanks(connection);
-
         } catch (Exception e) {
             logger.error("Error fetching group activity from Wise Old Man API", e);
         }
+    }
+
+    private void handleMemberLeft(Connection connection, Member member) throws SQLException, InterruptedException {
+        String rank = getMemberRank(connection, member.getUsername());
+        if (rank != null) {
+            removeMemberFromDatabase(connection, member.getUsername());
+            removeRolesFromDiscord(member.getUsername(), rank);
+        }
+    }
+
+    private void handleMemberJoined(Connection connection, Member member) throws SQLException {
+        if (!isMemberInDatabase(connection, member.getUsername())) {
+            addMemberToDatabase(connection, member.getUsername(), member.getWOMId(), member.getRank() != null ? member.getRank() : "default", member.getJoinDate());
+        }
+    }
+
+    private void handleMemberRoleChange(Connection connection, Member member) throws SQLException {
+        if (member.getRank() != null) {
+            updateRoleForMember(connection, member.getUsername(), member.getRank());
+        } else {
+            logger.warn("Role change event with null role for user: {}", member.getUsername());
+        }
+    }
+
+
+    private void updateRoleForMember(Connection connection, String username, String newRole) throws SQLException {
+        // Fetch the discord_uid associated with the username
+        String discordUid = findDiscordUidByCharacterName(connection, username);
+        if (discordUid == null) {
+            logger.warn("Discord UID not found for username: {}", username);
+            return;
+        }
+
+        // Update the rank in the database
+        updateRankInDatabase(connection, discordUid, newRole);
+
+        // Update the roles on Discord
+        updateDiscordRoles(discordUid, newRole);
     }
 
     private static JsonNode getNameChanges(String x) throws IOException {
@@ -402,7 +470,7 @@ public class WOMGroupUpdater {
         }
     }
 
-    private void removeRolesFromDiscord(String username, String rank) {
+    private void removeRolesFromDiscord(String username, String rank) throws InterruptedException {
         Server server = api.getServerById(Long.parseLong(dotenv.get("GUILD_ID"))).orElse(null);
         if (server == null) {
             logger.error("Server not found!");
@@ -413,10 +481,12 @@ public class WOMGroupUpdater {
         if (userOptional.isPresent()) {
             User user = userOptional.get();
 
+            Thread.sleep(250);
             // Remove the rank role
             Optional<org.javacord.api.entity.permission.Role> rankRole = server.getRolesByNameIgnoreCase(rank).stream().findFirst();
             rankRole.ifPresent(role -> user.removeRole(role).exceptionally(ExceptionLogger.get()));
 
+            Thread.sleep(250);
             // Remove the "Green Party Hats" role
             Optional<org.javacord.api.entity.permission.Role> greenPartyHatsRole = server.getRolesByNameIgnoreCase("Green Party Hats").stream().findFirst();
             greenPartyHatsRole.ifPresent(role -> user.removeRole(role).exceptionally(ExceptionLogger.get()));
@@ -488,5 +558,26 @@ public class WOMGroupUpdater {
 
     private Connection connect() throws SQLException {
         return DriverManager.getConnection(DB_URL, USER, PASS);
+    }
+
+    // Methods to track and update the last processed activity timestamp
+    private Timestamp getLastProcessedActivityTime(Connection connection) throws SQLException {
+        String query = "SELECT MAX(last_processed_at) FROM activity_log_tracker";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getTimestamp(1);
+                }
+            }
+        }
+        return Timestamp.valueOf("1970-01-01 00:00:00");
+    }
+
+    private void updateLastProcessedActivityTime(Connection connection, Timestamp lastProcessedAt) throws SQLException {
+        String insertSql = "INSERT INTO activity_log_tracker (last_processed_at) VALUES (?)";
+        try (PreparedStatement stmt = connection.prepareStatement(insertSql)) {
+            stmt.setTimestamp(1, lastProcessedAt);
+            stmt.executeUpdate();
+        }
     }
 }
