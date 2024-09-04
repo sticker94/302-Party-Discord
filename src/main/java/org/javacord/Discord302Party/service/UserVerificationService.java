@@ -6,11 +6,7 @@ import org.javacord.api.entity.server.Server;
 import org.javacord.api.entity.user.User;
 import org.javacord.api.util.logging.ExceptionLogger;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.Optional;
 
 public class UserVerificationService {
@@ -27,7 +23,7 @@ public class UserVerificationService {
 
     public void verifyAllUsers(Server server) {
         try (Connection connection = connect()) {
-            String query = "SELECT discord_uid, character_name FROM discord_users";
+            String query = "SELECT * FROM discord_users";
             try (PreparedStatement preparedStatement = connection.prepareStatement(query);
                  ResultSet resultSet = preparedStatement.executeQuery()) {
 
@@ -40,6 +36,12 @@ public class UserVerificationService {
                 while (resultSet.next()) {
                     long discordUid = resultSet.getLong("discord_uid");
                     String characterName = resultSet.getString("character_name");
+                    String rank = getRank(characterName);
+
+                    // Skip if the rank is "deputy_owner" or "owner"
+                    if ("deputy_owner".equalsIgnoreCase(rank) || "owner".equalsIgnoreCase(rank)) {
+                        continue;
+                    }
 
                     Optional<User> userOptional = server.getMemberById(discordUid);
                     if (userOptional.isPresent()) {
@@ -50,8 +52,6 @@ public class UserVerificationService {
                             user.addRole(greenPartyHatRole).exceptionally(ExceptionLogger.get());
                         }
 
-                        // Fetch the rank from the members table
-                        String rank = getRank(characterName);
                         if (rank != null) {
                             Optional<Role> rankRole = server.getRolesByNameIgnoreCase(rank).stream().findFirst();
                             if (rankRole.isPresent()) {
@@ -66,7 +66,8 @@ public class UserVerificationService {
                             System.err.println("Error: Couldn't find the rank for character: " + characterName + ".");
                         }
                     } else {
-                        System.err.println("Error: Couldn't find user with Discord UID: " + discordUid + ".");
+                        System.err.println("Error: Couldn't find user with Discord UID: " + discordUid + ". Moving data to archived_users.");
+                        moveUserToArchive(connection, discordUid);
                     }
                 }
             }
@@ -88,5 +89,48 @@ public class UserVerificationService {
             e.printStackTrace();
         }
         return null;
+    }
+
+    private void moveUserToArchive(Connection connection, long discordUid) {
+        try {
+            // Begin transaction
+            connection.setAutoCommit(false);
+
+            // Select the row from discord_users
+            String selectQuery = "SELECT * FROM discord_users WHERE discord_uid = ?";
+            try (PreparedStatement selectStmt = connection.prepareStatement(selectQuery)) {
+                selectStmt.setLong(1, discordUid);
+                try (ResultSet resultSet = selectStmt.executeQuery()) {
+                    if (resultSet.next()) {
+                        // Insert the row into archived_users
+                        String insertQuery = "INSERT INTO archived_users (discord_uid, character_name, rank) VALUES (?, ?, ?)";
+                        try (PreparedStatement insertStmt = connection.prepareStatement(insertQuery)) {
+                            insertStmt.setLong(1, resultSet.getLong("discord_uid"));
+                            insertStmt.setString(2, resultSet.getString("character_name"));
+                            insertStmt.setString(3, resultSet.getString("rank"));
+                            insertStmt.executeUpdate();
+                        }
+
+                        // Delete the row from discord_users
+                        String deleteQuery = "DELETE FROM discord_users WHERE discord_uid = ?";
+                        try (PreparedStatement deleteStmt = connection.prepareStatement(deleteQuery)) {
+                            deleteStmt.setLong(1, discordUid);
+                            deleteStmt.executeUpdate();
+                        }
+
+                        // Commit transaction
+                        connection.commit();
+                        System.out.println("User with Discord UID " + discordUid + " moved to archived_users.");
+                    }
+                }
+            } catch (SQLException e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
     }
 }
