@@ -10,6 +10,7 @@ import org.apache.logging.log4j.Logger;
 
 import java.sql.*;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 public class PointsCommand implements SlashCommandCreateListener {
 
@@ -31,12 +32,13 @@ public class PointsCommand implements SlashCommandCreateListener {
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setLong(1, discordUid);
-            ResultSet resultSet = preparedStatement.executeQuery();
-            if (resultSet.next()) {
-                logger.info("Character name found for Discord UID: {}", discordUid);
-                return resultSet.getString("character_name");
-            } else {
-                logger.warn("No character name found for Discord UID: {}", discordUid);
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                if (resultSet.next()) {
+                    logger.info("Character name found for Discord UID: {}", discordUid);
+                    return resultSet.getString("character_name");
+                } else {
+                    logger.warn("No character name found for Discord UID: {}", discordUid);
+                }
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while fetching character name: ", e);
@@ -49,12 +51,13 @@ public class PointsCommand implements SlashCommandCreateListener {
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, characterName);
-            ResultSet resultSet = preparedStatement.executeQuery();
-            if (resultSet.next()) {
-                logger.info("Points found for character name: {}", characterName);
-                return resultSet.getInt("points");
-            } else {
-                logger.warn("No points found for character name: {}", characterName);
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                if (resultSet.next()) {
+                    logger.info("Points found for character name: {}", characterName);
+                    return resultSet.getInt("points");
+                } else {
+                    logger.warn("No points found for character name: {}", characterName);
+                }
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while fetching user points: ", e);
@@ -67,12 +70,13 @@ public class PointsCommand implements SlashCommandCreateListener {
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, characterName);
-            ResultSet resultSet = preparedStatement.executeQuery();
-            if (resultSet.next()) {
-                logger.info("Given points found for character name: {}", characterName);
-                return resultSet.getInt("given_points");
-            } else {
-                logger.warn("No given points found for character name: {}", characterName);
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                if (resultSet.next()) {
+                    logger.info("Given points found for character name: {}", characterName);
+                    return resultSet.getInt("given_points");
+                } else {
+                    logger.warn("No given points found for character name: {}", characterName);
+                }
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while fetching user given points: ", e);
@@ -85,12 +89,13 @@ public class PointsCommand implements SlashCommandCreateListener {
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, rank);
-            ResultSet resultSet = preparedStatement.executeQuery();
-            if (resultSet.next()) {
-                logger.info("Total points found for rank: {}", rank);
-                return resultSet.getInt("total_points");
-            } else {
-                logger.warn("No total points found for rank: {}", rank);
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                if (resultSet.next()) {
+                    logger.info("Total points found for rank: {}", rank);
+                    return resultSet.getInt("total_points");
+                } else {
+                    logger.warn("No total points found for rank: {}", rank);
+                }
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while fetching rank total points: ", e);
@@ -103,12 +108,13 @@ public class PointsCommand implements SlashCommandCreateListener {
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, characterName);
-            ResultSet resultSet = preparedStatement.executeQuery();
-            if (resultSet.next()) {
-                logger.info("Rank found for character name: {}", characterName);
-                return resultSet.getString("rank");
-            } else {
-                logger.warn("No rank found for character name: {}", characterName);
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                if (resultSet.next()) {
+                    logger.info("Rank found for character name: {}", characterName);
+                    return resultSet.getString("rank");
+                } else {
+                    logger.warn("No rank found for character name: {}", characterName);
+                }
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while fetching user rank: ", e);
@@ -133,28 +139,28 @@ public class PointsCommand implements SlashCommandCreateListener {
         }
     }
 
-    private void updateUserGivenPoints(String characterName, int pointsGiven) {
-        String query = "UPDATE members SET given_points = given_points + ? WHERE username = ?";
+    private void logPointsTransaction(String characterName, int pointsChange, String reason, String relatedUser, int previousPoints, int newPoints) {
+        String query = "INSERT INTO points_transactions (character_name, points_change, reason, timestamp, related_user, previous_points, new_points) VALUES (?, ?, ?, NOW(), ?, ?, ?)";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-            preparedStatement.setInt(1, pointsGiven);
-            preparedStatement.setString(2, characterName);
-            int rowsUpdated = preparedStatement.executeUpdate();
-            if (rowsUpdated > 0) {
-                logger.info("Successfully updated given points for character name: {}", characterName);
-            } else {
-                logger.warn("No rows updated for character name: {}", characterName);
-            }
+            preparedStatement.setString(1, characterName);
+            preparedStatement.setInt(2, pointsChange);
+            preparedStatement.setString(3, reason);
+            preparedStatement.setString(4, relatedUser);
+            preparedStatement.setInt(5, previousPoints);
+            preparedStatement.setInt(6, newPoints);
+            preparedStatement.executeUpdate();
+            logger.info("Points transaction logged for character: {}", characterName);
         } catch (SQLException e) {
-            logger.error("SQL Exception while updating user given points: ", e);
+            logger.error("SQL Exception while logging points transaction: ", e);
         }
     }
 
     private String getPointsChannelId() {
         String query = "SELECT value FROM disc_config WHERE key_name = 'points_channel_id'";
         try (Connection connection = connect();
-             PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-            ResultSet resultSet = preparedStatement.executeQuery();
+             PreparedStatement preparedStatement = connection.prepareStatement(query);
+             ResultSet resultSet = preparedStatement.executeQuery()) {
             if (resultSet.next()) {
                 logger.info("Points channel ID found.");
                 return resultSet.getString("value");
@@ -189,6 +195,19 @@ public class PointsCommand implements SlashCommandCreateListener {
                     .setContent("Processing your request, please wait...")
                     .respond().join();
 
+            // Handle command processing asynchronously
+            CompletableFuture.runAsync(() -> processPointsCommand(event));
+        }
+    }
+
+    private boolean hasPermissionToRemovePoints(Server server, User user) {
+        return server.getRoles(user).stream()
+                .flatMap(role -> role.getAllowedPermissions().stream())
+                .anyMatch(permission -> permission == org.javacord.api.entity.permission.PermissionType.MANAGE_SERVER);
+    }
+
+    private void processPointsCommand(SlashCommandCreateEvent event) {
+        try {
             User user = event.getSlashCommandInteraction().getUser();
             long discordUid = user.getId();
             Server server = event.getSlashCommandInteraction().getServer().orElse(null);
@@ -213,19 +232,19 @@ public class PointsCommand implements SlashCommandCreateListener {
             // Check if a mention, points, and reason were provided
             logger.info("Attempting to retrieve optional arguments...");
             User mentionedUser = event.getSlashCommandInteraction().getOptionUserValueByName("user").orElse(null);
-            Optional<Long> pointsToGiveOpt = event.getSlashCommandInteraction().getOptionLongValueByName("points");
+            Optional<Long> pointsOpt = event.getSlashCommandInteraction().getOptionLongValueByName("points");
             String reason = event.getSlashCommandInteraction().getOptionStringValueByName("reason").orElse("No reason provided");
 
             logger.info("Mentioned user: {}", mentionedUser != null ? mentionedUser.getDiscriminatedName() : "None");
-            logger.info("Points to give: {}", pointsToGiveOpt.orElse(0L));
+            logger.info("Points: {}", pointsOpt.orElse(0L));
             logger.info("Reason: {}", reason);
 
-            int pointsToGive = pointsToGiveOpt.map(Long::intValue).orElse(0);
+            int points = pointsOpt.map(Long::intValue).orElse(0);
 
-            if (mentionedUser != null && pointsToGive > 0) {
-                // Handle giving points
+            if (mentionedUser != null && points != 0) {
+                // Handle adding or removing points
                 String mentionedCharacterName = getCharacterNameByDiscordUid(mentionedUser.getId());
-                logger.info("Attempting to give points to: {}", mentionedCharacterName);
+                logger.info("Attempting to modify points for: {}", mentionedCharacterName);
 
                 if (mentionedCharacterName == null) {
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
@@ -234,35 +253,42 @@ public class PointsCommand implements SlashCommandCreateListener {
                     return;
                 }
 
-                // Verify if the user has enough points to give
-                String userRank = getUserRank(characterName);
-                int givenPoints = getUserGivenPoints(characterName);
-                int totalPoints = getRankTotalPoints(userRank);
-                int availablePoints = totalPoints - givenPoints;
+                // Fetch current points of the mentioned user
+                int currentPoints = getUserPoints(mentionedCharacterName);
 
-                logger.info("User rank: {}, Given points: {}, Available points: {}", userRank, givenPoints, availablePoints);
+                // Check if the action is to remove points
+                if (points < 0) {
+                    // Check if the user has the MANAGE_SERVER permission
+                    if (!hasPermissionToRemovePoints(server, user)) {
+                        event.getSlashCommandInteraction().createFollowupMessageBuilder()
+                                .setContent("You do not have permission to remove points.")
+                                .send();
+                        return;
+                    }
 
-                if (availablePoints >= pointsToGive) {
-                    // Update points for the mentioned user and giver
-                    updateUserPoints(mentionedCharacterName, pointsToGive);
-                    updateUserGivenPoints(characterName, pointsToGive);
-
-                    // Fetch the remaining available points
-                    int updatedGivenPoints = getUserGivenPoints(characterName);
-                    int updatedAvailablePoints = totalPoints - updatedGivenPoints;
-
-                    // Post to the configured channel
-                    postPointsUpdate(server, mentionedCharacterName + " now has " + getUserPoints(mentionedCharacterName)
-                            + " points! Received " + pointsToGive + " from " + characterName + " for " + reason);
-
-                    event.getSlashCommandInteraction().createFollowupMessageBuilder()
-                            .setContent("Gave " + mentionedCharacterName + " " + pointsToGive + " points | " + updatedAvailablePoints + " remaining.")
-                            .send();
-                } else {
-                    event.getSlashCommandInteraction().createFollowupMessageBuilder()
-                            .setContent("You don't have enough points to give. You have " + availablePoints + " points available.")
-                            .send();
+                    // Ensure the user cannot remove more points than the user currently has
+                    if (currentPoints + points < 0) {
+                        event.getSlashCommandInteraction().createFollowupMessageBuilder()
+                                .setContent("Cannot remove more points than the user currently has. " + mentionedCharacterName + " has " + currentPoints + " points.")
+                                .send();
+                        return;
+                    }
                 }
+
+                // Update points for the mentioned user
+                updateUserPoints(mentionedCharacterName, points);
+
+                // Log the transaction
+                int newPoints = currentPoints + points;
+                logPointsTransaction(mentionedCharacterName, points, reason, characterName, currentPoints, newPoints);
+
+                // Post to the configured channel
+                String action = points > 0 ? "Received" : "Lost";
+                postPointsUpdate(server, mentionedCharacterName + " now has " + newPoints + " points! " + action + " " + Math.abs(points) + " from " + characterName + " for " + reason);
+
+                event.getSlashCommandInteraction().createFollowupMessageBuilder()
+                        .setContent(mentionedCharacterName + " now has " + newPoints + " points.")
+                        .send();
             } else {
                 // Fetch and display user's own points
                 int userPoints = getUserPoints(characterName);
@@ -275,6 +301,11 @@ public class PointsCommand implements SlashCommandCreateListener {
                         .setContent("You have " + userPoints + " points.\nYou have " + availablePoints + "/" + totalPoints + " points remaining to give.")
                         .send();
             }
+        } catch (Exception e) {
+            logger.error("Error processing points command: ", e);
+            event.getSlashCommandInteraction().createFollowupMessageBuilder()
+                    .setContent("An error occurred while processing your request. Please try again later.")
+                    .send();
         }
     }
 }
