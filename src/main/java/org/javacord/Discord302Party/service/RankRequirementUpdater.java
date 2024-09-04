@@ -51,11 +51,11 @@ public class RankRequirementUpdater {
     private void validateRequirementsForUser(String discordUid) {
         try (Connection connection = connect()) {
             // Retrieve the user's current rank and username
-            String currentRankQuery = "SELECT `rank`, username FROM members WHERE username = (SELECT character_name FROM discord_users WHERE discord_uid = ?)";
+            String currentRankQuery = "SELECT `rank`, username FROM members WHERE username = (SELECT character_name FROM discord_users WHERE discord_uid = ? LIMIT 1)";
             String nextRankQuery = "SELECT r_next.rank " +
                     "FROM config r_current " +
                     "JOIN config r_next ON r_next.rank_order = (" +
-                    "    SELECT MAX(rank_order) " +
+                    "    SELECT COALESCE(MAX(rank_order), 0) " +
                     "    FROM config " +
                     "    WHERE rank_order < r_current.rank_order " +
                     ") " +
