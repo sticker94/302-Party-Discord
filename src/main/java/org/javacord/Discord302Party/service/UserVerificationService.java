@@ -72,10 +72,13 @@ public class UserVerificationService {
                             logger.warn("Couldn't find the rank for character: {}. Moving data to archived_users.", characterName);
                             moveUserToArchive(connection, resultSet);
 
-                            // Remove roles from Discord user
+                            // Remove roles from Discord user, skipping @everyone
                             user.getRoles(server).forEach(role -> {
-                                if (!"deputy_owner".equalsIgnoreCase(role.getName()) && !"owner".equalsIgnoreCase(role.getName())) {
-                                    user.removeRole(role).exceptionally(ExceptionLogger.get());
+                                if (!"@everyone".equals(role.getName()) & (!"An Ancestor".equals(role.getName()))) {
+                                    user.removeRole(role).exceptionally(e -> {
+                                        logger.warn("Failed to remove role {} from user {}: {}", role.getName(), user.getName(), e.getMessage());
+                                        return null;
+                                    });
                                 }
                             });
                         }
@@ -111,7 +114,7 @@ public class UserVerificationService {
             connection.setAutoCommit(false);
 
             // Insert the row into archived_users
-            String insertQuery = "INSERT INTO archived_users (discord_uid, character_name, 'rank', replit_user_id) VALUES (?, ?, ?, ?)";
+            String insertQuery = "INSERT INTO archived_users (discord_uid, character_name, `rank`, replit_user_id) VALUES (?, ?, ?, ?)";
             try (PreparedStatement insertStmt = connection.prepareStatement(insertQuery)) {
                 insertStmt.setLong(1, resultSet.getLong("discord_uid"));
                 insertStmt.setString(2, resultSet.getString("character_name"));
