@@ -5,6 +5,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.javacord.Discord302Party.command.*;
 import org.javacord.Discord302Party.service.RankRequirementUpdater;
+import org.javacord.Discord302Party.service.UserVerificationService;
 import org.javacord.Discord302Party.service.WOMGroupUpdater;
 import org.javacord.Discord302Party.utils.Utils;
 import org.javacord.api.DiscordApi;
@@ -55,14 +56,18 @@ public class Main {
         Server server = api.getServerById(guildId).orElseThrow(() -> new IllegalArgumentException("Guild not found!"));
 
         // Initialize and start WOMGroupUpdater
-        WOMGroupUpdater updater = new WOMGroupUpdater(api);
-        updater.startUpdater();
+        WOMGroupUpdater womGroupUpdater = new WOMGroupUpdater(api);
+        womGroupUpdater.startUpdater();
 
         // Initialize and start RankRequirementUpdater
         RankRequirementUpdater rankRequirementUpdater = new RankRequirementUpdater();
         rankRequirementUpdater.startUpdater();
 
-        registerCommands(api, guildId, server);
+        // Initialize UserVerificationService
+        UserVerificationService userVerificationService = new UserVerificationService();
+
+        // Register all commands
+        registerCommands(api, guildId, server, womGroupUpdater, rankRequirementUpdater, userVerificationService);
 
         // Add listeners for Slash Commands and Select Menu interactions
         ViewRankRequirementsCommand viewRankRequirementsCommand = new ViewRankRequirementsCommand();
@@ -77,8 +82,8 @@ public class Main {
         api.addSlashCommandCreateListener(viewRankRequirementsCommand);  // Register the view rank requirements command as both a SlashCommand and SelectMenu listener
         api.addSelectMenuChooseListener(viewRankRequirementsCommand);   // Register the SelectMenuChooseListener
         api.addSlashCommandCreateListener(new DeleteRankRequirementsCommand());
-        api.addSlashCommandCreateListener(new RunUpdatersCommand(updater, rankRequirementUpdater));
-        api.addSlashCommandCreateListener(new VerifyAllUsersCommand());
+        api.addSlashCommandCreateListener(new RunUpdatersCommand(womGroupUpdater, rankRequirementUpdater, userVerificationService));
+        api.addSlashCommandCreateListener(new VerifyAllUsersCommand(userVerificationService));
 
         // Log a message, if the bot joined or left a server
         api.addServerJoinListener(event -> logger.info("Joined server {}", event.getServer().getName()));
@@ -95,8 +100,7 @@ public class Main {
         }));
     }
 
-    private static void registerCommands(DiscordApi api, long guildId, Server server) {
-        RankRequirementUpdater rankRequirementUpdater = new RankRequirementUpdater();
+    private static void registerCommands(DiscordApi api, long guildId, Server server, WOMGroupUpdater womGroupUpdater, RankRequirementUpdater rankRequirementUpdater, UserVerificationService userVerificationService) {
         List<String> ranks = rankRequirementUpdater.getAllRanks();
 
         // Use SlashCommandOptionBuilder directly
@@ -181,7 +185,7 @@ public class Main {
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "run_updaters" command
-        SlashCommand.with("run_updaters", "Manually run the WOMGroupUpdater and RankRequirementUpdater.")
+        SlashCommand.with("run_updaters", "Manually run the WOMGroupUpdater, RankRequirementUpdater, and UserVerificationService.")
                 .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
                 .createForServer(api.getServerById(guildId).get()).join();
 
@@ -189,7 +193,6 @@ public class Main {
         SlashCommand.with("verify_all_users", "Manually verify all discord roles to the database.")
                 .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
                 .createForServer(api.getServerById(guildId).get()).join();
-
 
         logger.info("Commands registered for guild: {}", guildId);
     }
