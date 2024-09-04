@@ -1,6 +1,8 @@
 package org.javacord.Discord302Party.service;
 
 import io.github.cdimascio.dotenv.Dotenv;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.javacord.api.entity.permission.Role;
 import org.javacord.api.entity.server.Server;
 import org.javacord.api.entity.user.User;
@@ -17,6 +19,9 @@ public class UserVerificationService {
     private static final String USER = dotenv.get("DB_USER");
     private static final String PASS = dotenv.get("DB_PASS");
 
+    // Logger instance
+    private static final Logger logger = LogManager.getLogger(UserVerificationService.class);
+
     private Connection connect() throws SQLException {
         return DriverManager.getConnection(DB_URL, USER, PASS);
     }
@@ -29,7 +34,7 @@ public class UserVerificationService {
 
                 Role greenPartyHatRole = server.getRoleById("1168065194858119218").orElse(null);
                 if (greenPartyHatRole == null) {
-                    System.err.println("Error: Couldn't find the 'Green Party Hat' role.");
+                    logger.error("Couldn't find the 'Green Party Hat' role.");
                     return;
                 }
 
@@ -57,22 +62,31 @@ public class UserVerificationService {
                             if (rankRole.isPresent()) {
                                 if (!user.getRoles(server).contains(rankRole.get())) {
                                     user.addRole(rankRole.get()).exceptionally(ExceptionLogger.get());
-                                    System.out.println("User " + characterName + " has been assigned the role: " + rank + ".");
+                                    logger.info("User {} has been assigned the role: {}.", characterName, rank);
                                 }
                             } else {
-                                System.err.println("Error: Couldn't find the role for rank: " + rank + ".");
+                                logger.warn("Couldn't find the role for rank: {}.", rank);
                             }
                         } else {
-                            System.err.println("Error: Couldn't find the rank for character: " + characterName + ".");
+                            // Rank not found, move user to archive
+                            logger.warn("Couldn't find the rank for character: {}. Moving data to archived_users.", characterName);
+                            moveUserToArchive(connection, resultSet);
+
+                            // Remove roles from Discord user
+                            user.getRoles(server).forEach(role -> {
+                                if (!"deputy_owner".equalsIgnoreCase(role.getName()) && !"owner".equalsIgnoreCase(role.getName())) {
+                                    user.removeRole(role).exceptionally(ExceptionLogger.get());
+                                }
+                            });
                         }
                     } else {
-                        System.err.println("Error: Couldn't find user with Discord UID: " + discordUid + ". Moving data to archived_users.");
-                        moveUserToArchive(connection, discordUid);
+                        logger.warn("Couldn't find user with Discord UID: {}. Moving data to archived_users.", discordUid);
+                        moveUserToArchive(connection, resultSet);
                     }
                 }
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error("SQL Exception occurred during user verification process.", e);
         }
     }
 
@@ -86,51 +100,50 @@ public class UserVerificationService {
                 return resultSet.getString("rank");
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error("SQL Exception occurred while fetching rank for character: {}.", characterName, e);
         }
         return null;
     }
 
-    private void moveUserToArchive(Connection connection, long discordUid) {
+    private void moveUserToArchive(Connection connection, ResultSet resultSet) throws SQLException {
         try {
             // Begin transaction
             connection.setAutoCommit(false);
 
-            // Select the row from discord_users
-            String selectQuery = "SELECT * FROM discord_users WHERE discord_uid = ?";
-            try (PreparedStatement selectStmt = connection.prepareStatement(selectQuery)) {
-                selectStmt.setLong(1, discordUid);
-                try (ResultSet resultSet = selectStmt.executeQuery()) {
-                    if (resultSet.next()) {
-                        // Insert the row into archived_users
-                        String insertQuery = "INSERT INTO archived_users (discord_uid, character_name, rank) VALUES (?, ?, ?)";
-                        try (PreparedStatement insertStmt = connection.prepareStatement(insertQuery)) {
-                            insertStmt.setLong(1, resultSet.getLong("discord_uid"));
-                            insertStmt.setString(2, resultSet.getString("character_name"));
-                            insertStmt.setString(3, resultSet.getString("rank"));
-                            insertStmt.executeUpdate();
-                        }
-
-                        // Delete the row from discord_users
-                        String deleteQuery = "DELETE FROM discord_users WHERE discord_uid = ?";
-                        try (PreparedStatement deleteStmt = connection.prepareStatement(deleteQuery)) {
-                            deleteStmt.setLong(1, discordUid);
-                            deleteStmt.executeUpdate();
-                        }
-
-                        // Commit transaction
-                        connection.commit();
-                        System.out.println("User with Discord UID " + discordUid + " moved to archived_users.");
-                    }
-                }
-            } catch (SQLException e) {
-                connection.rollback();
-                throw e;
-            } finally {
-                connection.setAutoCommit(true);
+            // Insert the row into archived_users
+            String insertQuery = "INSERT INTO archived_users (discord_uid, character_name, 'rank', replit_user_id) VALUES (?, ?, ?, ?)";
+            try (PreparedStatement insertStmt = connection.prepareStatement(insertQuery)) {
+                insertStmt.setLong(1, resultSet.getLong("discord_uid"));
+                insertStmt.setString(2, resultSet.getString("character_name"));
+                insertStmt.setString(3, resultSet.getString("rank"));
+                insertStmt.setLong(4, resultSet.getLong("replit_user_id"));
+                insertStmt.executeUpdate();
             }
+
+            // Delete the row from discord_users
+            String deleteQuery = "DELETE FROM discord_users WHERE discord_uid = ?";
+            try (PreparedStatement deleteStmt = connection.prepareStatement(deleteQuery)) {
+                deleteStmt.setLong(1, resultSet.getLong("discord_uid"));
+                deleteStmt.executeUpdate();
+            }
+
+            // Commit transaction
+            connection.commit();
+            logger.info("User with Discord UID {} moved to archived_users.", resultSet.getLong("discord_uid"));
+
         } catch (SQLException e) {
-            e.printStackTrace();
+            try {
+                connection.rollback();
+            } catch (SQLException rollbackException) {
+                logger.error("Error occurred during transaction rollback.", rollbackException);
+            }
+            logger.error("SQL Exception occurred while moving user with Discord UID {} to archive.", resultSet.getLong("discord_uid"), e);
+        } finally {
+            try {
+                connection.setAutoCommit(true);
+            } catch (SQLException e) {
+                logger.error("Error occurred while resetting auto-commit mode.", e);
+            }
         }
     }
 }
