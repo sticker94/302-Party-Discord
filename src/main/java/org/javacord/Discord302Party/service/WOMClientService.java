@@ -1,12 +1,11 @@
 package org.javacord.Discord302Party.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.javacord.Discord302Party.Member;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -83,12 +82,17 @@ public class WOMClientService {
 
                     int WOMId = player.get("id").asInt();
                     String username = player.get("username").asText();
-                    String rank = membership.get("role").asText(); // Assuming 'role' as rank
+                    String rank = null;
+                    String temporaryRank = null;
+                    if (isTemporaryRank(membership.get("role").asText())) {
+                        temporaryRank = membership.get("role").asText();
+                        rank = null;
+                    } else {
+                        rank = membership.get("role").asText();
+                        temporaryRank = null;
+                    }
                     Timestamp rankObtainedTimestamp = Timestamp.valueOf(membership.get("updatedAt").asText().replace("T", " ").replace("Z", ""));
                     Timestamp joinDate = Timestamp.valueOf(membership.get("createdAt").asText().replace("T", " ").replace("Z", ""));
-
-                    // Get the temporary rank if it exists
-                    String temporaryRank = getTemporaryRank(connection, username);
 
                     members.add(new Member(WOMId, username, rank, rankObtainedTimestamp, joinDate, temporaryRank));
                 }
@@ -98,6 +102,21 @@ public class WOMClientService {
             logger.error("Error parsing JSON response: {}", e.getMessage());
         }
         return members;
+    }
+
+    private boolean isTemporaryRank(String rank) {
+        // Here we check if the rank is in the list of known temporary ranks
+        String[] temporaryRanks = {"monarch", "competitor", "attacker", "enforcer", "defender", "ranger", "priest",
+                "magician", "runecrafter", "medic", "athlete", "herbologist", "thief", "crafter",
+                "fletcher", "miner", "smith", "fisher", "cook", "firemaker", "lumberjack", "slayer",
+                "farmer", "constructor", "hunter", "skiller"};
+
+        for (String tempRank : temporaryRanks) {
+            if (tempRank.equalsIgnoreCase(rank)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String getTemporaryRank(Connection connection, String username) {

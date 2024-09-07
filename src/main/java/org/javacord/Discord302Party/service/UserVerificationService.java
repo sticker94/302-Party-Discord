@@ -42,11 +42,7 @@ public class UserVerificationService {
                     long discordUid = resultSet.getLong("discord_uid");
                     String characterName = resultSet.getString("character_name");
                     String rank = getRank(characterName);
-
-                    // Skip if the rank is "deputy_owner" or "owner"
-                    if ("deputy_owner".equalsIgnoreCase(rank) || "owner".equalsIgnoreCase(rank)) {
-                        continue;
-                    }
+                    String tempRank = getTempRank(discordUid);
 
                     Optional<User> userOptional = server.getMemberById(discordUid);
                     if (userOptional.isPresent()) {
@@ -57,24 +53,22 @@ public class UserVerificationService {
                             user.addRole(greenPartyHatRole).exceptionally(ExceptionLogger.get());
                         }
 
+                        // Assign the rank and temporary rank roles
                         if (rank != null) {
-                            Optional<Role> rankRole = server.getRolesByNameIgnoreCase(rank).stream().findFirst();
-                            if (rankRole.isPresent()) {
-                                if (!user.getRoles(server).contains(rankRole.get())) {
-                                    user.addRole(rankRole.get()).exceptionally(ExceptionLogger.get());
-                                    logger.info("User {} has been assigned the role: {}.", characterName, rank);
-                                }
+                            assignRoleToUser(server, user, rank);
+                            if (tempRank != null) {
+                                assignRoleToUser(server, user, tempRank);
                             } else {
-                                logger.warn("Couldn't find the role for rank: {}.", rank);
+                                // Remove any expired temporary roles
+                                removeExpiredTempRolesFromUser(server, connection, discordUid, user);
                             }
                         } else {
-                            // Rank not found, move user to archive
                             logger.warn("Couldn't find the rank for character: {}. Moving data to archived_users.", characterName);
                             moveUserToArchive(connection, resultSet);
 
-                            // Remove roles from Discord user, skipping @everyone
+                            // Remove all roles except @everyone
                             user.getRoles(server).forEach(role -> {
-                                if (!"@everyone".equals(role.getName()) & (!"An Ancestor".equals(role.getName()))) {
+                                if (!role.getName().equals("@everyone")) {
                                     user.removeRole(role).exceptionally(e -> {
                                         logger.warn("Failed to remove role {} from user {}: {}", role.getName(), user.getName(), e.getMessage());
                                         return null;
@@ -93,6 +87,48 @@ public class UserVerificationService {
         }
     }
 
+    private void removeExpiredTempRolesFromUser(Server server, Connection connection, long discordUid, User user) throws SQLException {
+        String query = "SELECT `rank` FROM temporary_ranks WHERE discord_uid = ? AND added_date < (NOW() - INTERVAL 1 MONTH)";
+        try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
+            preparedStatement.setLong(1, discordUid);
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                while (resultSet.next()) {
+                    String expiredRank = resultSet.getString("rank");
+                    Optional<Role> expiredRole = user.getRoles(server).stream()
+                            .filter(role -> role.getName().equalsIgnoreCase(expiredRank))
+                            .findFirst();
+                    if (expiredRole.isPresent()) {
+                        user.removeRole(expiredRole.get()).exceptionally(ExceptionLogger.get());
+                        logger.info("Removed expired temporary role {} from user {}", expiredRank, user.getName());
+                    }
+
+                    // Remove from database
+                    String deleteSql = "DELETE FROM temporary_ranks WHERE discord_uid = ? AND `rank` = ?";
+                    try (PreparedStatement deleteStmt = connection.prepareStatement(deleteSql)) {
+                        deleteStmt.setLong(1, discordUid);
+                        deleteStmt.setString(2, expiredRank);
+                        deleteStmt.executeUpdate();
+                        logger.info("Deleted expired temporary rank {} for Discord UID: {}", expiredRank, discordUid);
+                    }
+                }
+            }
+        }
+    }
+
+    private void assignRoleToUser(Server server, User user, String roleName) {
+        Optional<Role> roleOptional = server.getRolesByNameIgnoreCase(roleName).stream().findFirst();
+        if (roleOptional.isPresent()) {
+            Role role = roleOptional.get();
+            if (!user.getRoles(server).contains(role)) {
+                user.addRole(role).exceptionally(ExceptionLogger.get());
+                logger.info("Assigned role {} to user {}", role.getName(), user.getName());
+            }
+        } else {
+            logger.warn("Role {} not found on the server", roleName);
+        }
+    }
+
+
     private String getRank(String characterName) {
         String query = "SELECT `rank` FROM members WHERE REPLACE(username, '_', ' ') = ?";
         try (Connection connection = connect();
@@ -104,6 +140,21 @@ public class UserVerificationService {
             }
         } catch (SQLException e) {
             logger.error("SQL Exception occurred while fetching rank for character: {}.", characterName, e);
+        }
+        return null;
+    }
+
+    private String getTempRank(long discordUID) {
+        String query = "SELECT `rank` FROM temporary_ranks WHERE discord_uid = ?";
+        try (Connection connection = connect();
+             PreparedStatement preparedStatement = connection.prepareStatement(query)) {
+            preparedStatement.setString(1, String.valueOf(discordUID));
+            ResultSet resultSet = preparedStatement.executeQuery();
+            if (resultSet.next()) {
+                return resultSet.getString("rank");
+            }
+        } catch (SQLException e) {
+            logger.error("SQL Exception occurred while fetching Temporary rank for UID: {}.", discordUID, e);
         }
         return null;
     }

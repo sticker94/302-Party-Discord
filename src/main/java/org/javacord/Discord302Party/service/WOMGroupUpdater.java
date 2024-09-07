@@ -17,11 +17,10 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URL;
 import java.sql.*;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
+
 
 public class WOMGroupUpdater {
 
@@ -163,13 +162,13 @@ public class WOMGroupUpdater {
         }
 
         // Check if this rank is a temporary rank
-        boolean isTemporaryRank = isTemporaryRank(member.getRank());
+        boolean isTemporaryRank = isTemporaryRank(member.getTemporaryRank());
         String currentRank = findCurrentRank(connection, discordUid);
 
-        if (currentRank != null && !currentRank.equalsIgnoreCase(member.getRank())) {
+        if (currentRank != null && !currentRank.equalsIgnoreCase(member.getRank()) && !isTemporaryRank(member.getRank())) {
             if (isTemporaryRank) {
                 // If it's a temporary rank, update the temporary ranks table and skip normal rank update
-                updateTemporaryRankInDatabase(connection, discordUid, member.getRank());
+                updateTemporaryRankInDatabase(connection, discordUid, member.getTemporaryRank());
             } else {
                 // Update the rank in the discord_users table
                 updateRankInDatabase(connection, discordUid, member.getRank());
@@ -196,11 +195,15 @@ public class WOMGroupUpdater {
 
             // Ensure activityEvents is an array
             if (activityEvents.isArray()) {
-                // Reverse the list to process from oldest to newest
-                List<JsonNode> activityList = activityEvents.findValues("createdAt");
-                Collections.reverse(activityList);
+                // Sort the activity list based on the createdAt timestamp in ascending order
+                List<JsonNode> activityList = StreamSupport.stream(activityEvents.spliterator(), false)
+                        .sorted(Comparator.comparing(event -> {
+                            String createdAtStr = event.get("createdAt").asText();
+                            return Timestamp.valueOf(createdAtStr.replace("T", " ").replace("Z", ""));
+                        }))
+                        .collect(Collectors.toList());
 
-                for (JsonNode event : activityEvents) {
+                for (JsonNode event : activityList) {
                     logger.info("Processing event: {}", event.toString());
 
                     // Extract event details
@@ -220,19 +223,29 @@ public class WOMGroupUpdater {
                         lastProcessedTimestamp = Timestamp.valueOf("1970-01-01 00:00:00");
                     }
 
-                    // If the event is older then the last processed timestamp, skip it
+                    // If the event is older than the last processed timestamp, skip it
                     if (updatedAt.before(lastProcessedTimestamp)) {
                         continue;
                     }
 
+                    String role = null;
+                    String tempRole = null;
                     String username = playerNode.get("username").asText();
                     int womId = playerNode.get("id").asInt();
                     String eventType = event.get("type").asText();
-                    String role = event.hasNonNull("role") ? event.get("role").asText() : null;
-                    Timestamp joinDate = event.has("createdAt") ? Timestamp.valueOf(event.get("createdAt").asText().replace("T", " ").replace("Z", "")) : null;
+
+                    if (isTemporaryRank(event.get("role").asText())) {
+                        tempRole = event.get("role").asText();
+                    } else {
+                        role = event.get("role").asText();
+                    }
+
+                    Timestamp joinDate = event.has("createdAt") ?
+                            Timestamp.valueOf(event.get("createdAt").asText().replace("T", " ").replace("Z", "")) :
+                            null;
 
                     // Create Member object
-                    Member member = new Member(womId, username, role, updatedAt, joinDate, null);
+                    Member member = new Member(womId, username, role, updatedAt, joinDate, tempRole);
 
                     // Handle different event types
                     switch (eventType) {
@@ -299,21 +312,54 @@ public class WOMGroupUpdater {
     }
 
     private void handleMemberRoleChange(Connection connection, Member member) throws SQLException {
+        if (isTemporaryRank(member.getTemporaryRank())) {
+            logger.info("Temporary rank identified for user: {} rank: {}", member.getUsername(), member.getTemporaryRank());
+        }
+        // If the member no longer has a temporary rank, remove it
         if (member.getRank() != null) {
-            updateRoleForMember(connection, member.getUsername(), member.getRank());
+            updateRoleForMember(connection, member.getUsername(), member.getRank(), null);
+            if (member.getTemporaryRank()==null) {
+                removeTemporaryRank(connection, member.getUsername());
+                updateRoleForMember(connection, member.getUsername(), member.getRank(), null);
+            }
         } else {
-            logger.warn("Role change event with null role for user: {}", member.getUsername());
+            if (member.getTemporaryRank() != null) {
+                updateRoleForMember(connection, member.getUsername(), null, member.getTemporaryRank());
+            } else {
+                logger.warn("Role change event with null role and null temp role for user: {}", member.getUsername());
+            }
         }
     }
 
-    private void updateRoleForMember(Connection connection, String username, String newRole) throws SQLException {
+    private void removeTemporaryRank(Connection connection, String discordUid) throws SQLException {
+        // First, check if the user exists in the temporary_ranks table
+        String checkSql = "SELECT COUNT(*) FROM temporary_ranks WHERE discord_uid = ?";
+        try (PreparedStatement checkStmt = connection.prepareStatement(checkSql)) {
+            checkStmt.setString(1, discordUid);
+            try (ResultSet rs = checkStmt.executeQuery()) {
+                if (rs.next() && rs.getInt(1) > 0) {
+                    // User exists in the temporary_ranks table, proceed to remove the rank
+                    String deleteSql = "DELETE FROM temporary_ranks WHERE discord_uid = ?";
+                    try (PreparedStatement deleteStmt = connection.prepareStatement(deleteSql)) {
+                        deleteStmt.setString(1, discordUid);
+                        int rowsDeleted = deleteStmt.executeUpdate();
+                        if (rowsDeleted > 0) {
+                            logger.info("Removed temporary rank for user with Discord UID: {}", discordUid);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void updateRoleForMember(Connection connection, String username, String newRole, String tempRank) throws SQLException {
         // Fetch the discord_uid associated with the username
         String discordUid = findDiscordUidByCharacterName(connection, username);
         if (discordUid == null) {
             logger.warn("Discord UID not found for username: {}", username);
             return;
         }
-
+        if (tempRank != null) {updateDiscordRoles(discordUid, tempRank); return;}
         // Update the rank in the database
         updateRankInDatabase(connection, discordUid, newRole);
 
@@ -426,8 +472,9 @@ public class WOMGroupUpdater {
 
             // Remove previous roles related to ranks
             user.getRoles(server).forEach(role -> {
-                if (isRankRole(role.getName())) {
+                if (isRankRole(role.getName()) || isTemporaryRank(role.getName())) {
                     user.removeRole(role).exceptionally(ExceptionLogger.get());
+                    logger.info("Removed role: {} from user: {}", role.getName(), user.getName());
                 }
             });
 
@@ -450,6 +497,9 @@ public class WOMGroupUpdater {
                 try (ResultSet rs = stmt.executeQuery()) {
                     if (rs.next()) {
                         String currentRank = rs.getString("rank");
+                        if (isTemporaryRank(member.getTemporaryRank())){
+                            return false;
+                        }
                         return !currentRank.equalsIgnoreCase(member.getRank());
                     }
                 }
@@ -529,15 +579,79 @@ public class WOMGroupUpdater {
 
     private void removeExpiredTemporaryRanks(Connection connection) {
         try {
-            String query = "DELETE FROM temporary_ranks WHERE added_date < (NOW() - INTERVAL 1 MONTH)";
+            // First, retrieve the users with expired temporary ranks
+            String query = "SELECT discord_uid, `rank` FROM temporary_ranks WHERE added_date < (NOW() - INTERVAL 1 MONTH)";
             try (PreparedStatement stmt = connection.prepareStatement(query)) {
-                int rowsDeleted = stmt.executeUpdate();
-                if (rowsDeleted > 0) {
-                    logger.info("Removed expired temporary ranks.");
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        String discordUid = rs.getString("discord_uid");
+                        String rank = rs.getString("rank");
+
+                        // Check if the user still has the rank in the database
+                        if (isTemporaryRankStillPresent(connection, discordUid, rank)) {
+                            // Remove the role from Discord
+                            removeTempRoleFromDiscord(discordUid, rank);
+
+                            // After removing the role, delete the temporary rank from the database
+                            deleteTempRankFromDatabase(connection, discordUid, rank);
+                        } else {
+                            logger.info("User {} no longer has the temporary rank {}", discordUid, rank);
+                        }
+                    }
                 }
             }
         } catch (SQLException e) {
             logger.error("Error removing expired temporary ranks.", e);
+        }
+    }
+
+    private boolean isTemporaryRankStillPresent(Connection connection, String discordUid, String rank) throws SQLException {
+        String checkSql = "SELECT COUNT(*) FROM temporary_ranks WHERE discord_uid = ? AND `rank` = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(checkSql)) {
+            stmt.setString(1, discordUid);
+            stmt.setString(2, rank);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next() && rs.getInt(1) > 0) {
+                    return true; // Temporary rank is still present in the database
+                }
+            }
+        }
+        return false; // Temporary rank has already been removed
+    }
+
+    private void deleteTempRankFromDatabase(Connection connection, String discordUid, String rank) throws SQLException {
+        String deleteSql = "DELETE FROM temporary_ranks WHERE discord_uid = ? AND `rank` = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(deleteSql)) {
+            stmt.setString(1, discordUid);
+            stmt.setString(2, rank);
+            int rowsDeleted = stmt.executeUpdate();
+            if (rowsDeleted > 0) {
+                logger.info("Removed expired temporary rank {} for Discord UID: {}", rank, discordUid);
+            }
+        }
+    }
+
+    private void removeTempRoleFromDiscord(String discordUid, String rank) {
+        Server server = api.getServerById(Long.parseLong(dotenv.get("GUILD_ID"))).orElse(null);
+        if (server == null) {
+            logger.error("Server not found!");
+            return;
+        }
+
+        Optional<User> userOptional = server.getMemberById(discordUid);
+        if (userOptional.isPresent()) {
+            User user = userOptional.get();
+
+            // Find the role on the server that matches the temporary rank
+            Optional<org.javacord.api.entity.permission.Role> roleToRemove = server.getRolesByNameIgnoreCase(rank).stream().findFirst();
+            if (roleToRemove.isPresent()) {
+                user.removeRole(roleToRemove.get()).exceptionally(ExceptionLogger.get());
+                logger.info("Removed temporary role: {} from user: {}", roleToRemove.get().getName(), user.getName());
+            } else {
+                logger.warn("Role not found on the server for rank: {}", rank);
+            }
+        } else {
+            logger.warn("User not found on the server for Discord UID: {}", discordUid);
         }
     }
 
