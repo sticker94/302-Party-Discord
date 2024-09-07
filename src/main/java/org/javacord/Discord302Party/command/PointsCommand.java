@@ -139,6 +139,24 @@ public class PointsCommand implements SlashCommandCreateListener {
         }
     }
 
+    private int getPointsGivenInLast24Hours(String giver, String recipient) {
+        String query = "SELECT SUM(points_change) AS total_given FROM points_transactions " +
+                "WHERE character_name = ? AND related_user = ? AND timestamp >= NOW() - INTERVAL 1 DAY";
+        try (Connection connection = connect();
+             PreparedStatement preparedStatement = connection.prepareStatement(query)) {
+            preparedStatement.setString(1, giver);
+            preparedStatement.setString(2, recipient);
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                if (resultSet.next()) {
+                    return resultSet.getInt("total_given");
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("SQL Exception while checking points given in last 24 hours: ", e);
+        }
+        return 0;
+    }
+
     private void logPointsTransaction(String characterName, int pointsChange, String reason, String relatedUser, int previousPoints, int newPoints) {
         String query = "INSERT INTO points_transactions (character_name, points_change, reason, timestamp, related_user, previous_points, new_points) VALUES (?, ?, ?, NOW(), ?, ?, ?)";
         try (Connection connection = connect();
@@ -273,6 +291,15 @@ public class PointsCommand implements SlashCommandCreateListener {
                                 .send();
                         return;
                     }
+                }
+
+                // Check how many points the giver has given in the last 24 hours to the recipient
+                int pointsGivenInLast24Hours = getPointsGivenInLast24Hours(characterName, mentionedCharacterName);
+                if (pointsGivenInLast24Hours + points > 5) {
+                    event.getSlashCommandInteraction().createFollowupMessageBuilder()
+                            .setContent("You have already given " + pointsGivenInLast24Hours + " points to " + mentionedCharacterName + " in the last 24 hours. You can only give a maximum of 5 points per 24 hours to the same user.")
+                            .send();
+                    return;
                 }
 
                 // Update points for the mentioned user
