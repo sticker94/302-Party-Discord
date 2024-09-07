@@ -84,6 +84,7 @@ public class Main {
         api.addSlashCommandCreateListener(new DeleteRankRequirementsCommand());
         api.addSlashCommandCreateListener(new RunUpdatersCommand(womGroupUpdater, rankRequirementUpdater, userVerificationService));
         api.addSlashCommandCreateListener(new VerifyAllUsersCommand(userVerificationService));
+        api.addSlashCommandCreateListener(new WomGroupValidatorCommand());
 
         // Log a message, if the bot joined or left a server
         api.addServerJoinListener(event -> logger.info("Joined server {}", event.getServer().getName()));
@@ -193,6 +194,12 @@ public class Main {
         SlashCommand.with("verify_all_users", "Manually verify all discord roles to the database.")
                 .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
                 .createForServer(api.getServerById(guildId).get()).join();
+
+        // Register the "validate_group" command
+        SlashCommand.with("validate_group", "Validate the WOM group data against the database.")
+                .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
+                .createForServer(api.getServerById(guildId).get()).join();
+
 
         logger.info("Commands registered for guild: {}", guildId);
     }

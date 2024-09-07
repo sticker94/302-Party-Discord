@@ -102,7 +102,7 @@ public class WOMClientService {
 
     private String getTemporaryRank(Connection connection, String username) {
         String temporaryRank = null;
-        String query = "SELECT `rank` FROM temporary_ranks WHERE discord_uid = (SELECT discord_uid FROM discord_users WHERE character_name = ?)";
+        String query = "SELECT `rank` FROM temporary_ranks WHERE discord_uid = (SELECT discord_uid FROM discord_users WHERE character_name = ? LIMIT 1) LIMIT 1";
         try (PreparedStatement stmt = connection.prepareStatement(query)) {
             stmt.setString(1, username);
             ResultSet rs = stmt.executeQuery();

@@ -191,17 +191,19 @@ public class WOMGroupUpdater {
             // Retrieve the last processed "updatedAt" timestamp
             Timestamp lastProcessedTimestamp = getLastProcessedActivityTime(connection);
 
-            JsonNode activityEvents = getNameChanges("/activity");
+            // Fetch group activity from Wise Old Man API
+            JsonNode activityEvents = getGroupActivity("/activity");
 
-            // Check if the activityEvents is an array
+            // Ensure activityEvents is an array
             if (activityEvents.isArray()) {
                 // Reverse the list to process from oldest to newest
-                List<JsonNode> activityList = activityEvents.findValues("updatedAt");
+                List<JsonNode> activityList = activityEvents.findValues("createdAt");
                 Collections.reverse(activityList);
 
-                for (JsonNode event : activityList) {
+                for (JsonNode event : activityEvents) {
                     logger.info("Processing event: {}", event.toString());
 
+                    // Extract event details
                     JsonNode playerNode = event.get("player");
                     if (playerNode == null) {
                         logger.warn("Skipping event due to missing player node: {}", event.toString());
@@ -210,9 +212,16 @@ public class WOMGroupUpdater {
 
                     String updatedAtStr = event.get("createdAt").asText();
                     Timestamp updatedAt = Timestamp.valueOf(updatedAtStr.replace("T", " ").replace("Z", ""));
+                    Thread.sleep(250);
 
-                    // If the event is older or equal to the last processed timestamp, skip it
-                    if (updatedAt.before(lastProcessedTimestamp) || updatedAt.equals(lastProcessedTimestamp)) {
+                    // Handle the case where lastProcessedTimestamp is null
+                    if (lastProcessedTimestamp == null) {
+                        // If we don't have a last processed timestamp, initialize it to a default value
+                        lastProcessedTimestamp = Timestamp.valueOf("1970-01-01 00:00:00");
+                    }
+
+                    // If the event is older then the last processed timestamp, skip it
+                    if (updatedAt.before(lastProcessedTimestamp)) {
                         continue;
                     }
 
@@ -222,8 +231,10 @@ public class WOMGroupUpdater {
                     String role = event.hasNonNull("role") ? event.get("role").asText() : null;
                     Timestamp joinDate = event.has("createdAt") ? Timestamp.valueOf(event.get("createdAt").asText().replace("T", " ").replace("Z", "")) : null;
 
+                    // Create Member object
                     Member member = new Member(womId, username, role, updatedAt, joinDate, null);
 
+                    // Handle different event types
                     switch (eventType) {
                         case "left":
                             handleMemberLeft(connection, member);
@@ -253,6 +264,26 @@ public class WOMGroupUpdater {
         }
     }
 
+    private static JsonNode getGroupActivity(String x) throws IOException {
+        String urlString = "https://api.wiseoldman.net/v2/groups/" + GROUP_ID + x +"?limit=50";
+        URL url = new URL(urlString);
+        HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        conn.setRequestProperty("x-api-key", WOM_API_KEY);
+        conn.setRequestProperty("User-Agent", DISCORD_NAME);
+
+        BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+        String inputLine;
+        StringBuilder content = new StringBuilder();
+        while ((inputLine = in.readLine()) != null) {
+            content.append(inputLine);
+        }
+        in.close();
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        return objectMapper.readTree(content.toString());
+    }
+
     private void handleMemberLeft(Connection connection, Member member) throws SQLException, InterruptedException {
         String rank = getMemberRank(connection, member.getUsername());
         if (rank != null) {
@@ -274,7 +305,6 @@ public class WOMGroupUpdater {
             logger.warn("Role change event with null role for user: {}", member.getUsername());
         }
     }
-
 
     private void updateRoleForMember(Connection connection, String username, String newRole) throws SQLException {
         // Fetch the discord_uid associated with the username
@@ -574,7 +604,8 @@ public class WOMGroupUpdater {
     }
 
     private void updateLastProcessedActivityTime(Connection connection, Timestamp lastProcessedAt) throws SQLException {
-        String insertSql = "INSERT INTO activity_log_tracker (last_processed_at) VALUES (?)";
+        String insertSql = "INSERT INTO activity_log_tracker (last_processed_at) VALUES (?) " +
+                "ON DUPLICATE KEY UPDATE last_processed_at = VALUES(last_processed_at)";
         try (PreparedStatement stmt = connection.prepareStatement(insertSql)) {
             stmt.setTimestamp(1, lastProcessedAt);
             stmt.executeUpdate();
