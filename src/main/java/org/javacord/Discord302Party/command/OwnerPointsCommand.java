@@ -3,21 +3,19 @@ package org.javacord.Discord302Party.command;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.javacord.api.entity.message.MessageFlag;
+import org.javacord.api.entity.permission.Role;
 import org.javacord.api.entity.server.Server;
 import org.javacord.api.entity.user.User;
 import org.javacord.api.event.interaction.SlashCommandCreateEvent;
-import org.javacord.api.event.interaction.UserContextMenuCommandEvent;
 import org.javacord.api.listener.interaction.SlashCommandCreateListener;
-import org.javacord.api.listener.interaction.UserContextMenuCommandListener;
 
 import java.sql.*;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
-public class PointsCommand implements SlashCommandCreateListener, UserContextMenuCommandListener {
+public class OwnerPointsCommand implements SlashCommandCreateListener {
 
-    private static final Logger logger = LogManager.getLogger(PointsCommand.class);
+    private static final Logger logger = LogManager.getLogger(ModPointsCommand.class);
 
     // Load environment variables
     private static final Dotenv dotenv = Dotenv.load();
@@ -144,7 +142,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
 
     private int getPointsGivenInLast24Hours(String giver, String recipient) {
         String query = "SELECT SUM(points_change) AS total_given FROM points_transactions " +
-                "WHERE related_user = ? AND character_name = ? AND timestamp >= NOW() - INTERVAL 1 DAY";
+                "WHERE character_name = ? AND related_user = ? AND timestamp >= NOW() - INTERVAL 1 DAY";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, giver);
@@ -206,10 +204,9 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
         }
     }
 
-
     @Override
     public void onSlashCommandCreate(SlashCommandCreateEvent event) {
-        if (event.getSlashCommandInteraction().getCommandName().equalsIgnoreCase("points")) {
+        if (event.getSlashCommandInteraction().getCommandName().equalsIgnoreCase("owner_points")) {
             logger.info("Points command received.");
 
             // Send an initial "Processing..." response to avoid timing out
@@ -219,58 +216,6 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
 
             // Handle command processing asynchronously
             CompletableFuture.runAsync(() -> processPointsCommand(event));
-        }
-    }
-
-    @Override
-    public void onUserContextMenuCommand(UserContextMenuCommandEvent event) {
-        if (event.getUserContextMenuInteraction().getCommandName().equalsIgnoreCase("Give Points")) {
-            logger.info("Points context menu command received.");
-            User targetUser = event.getUserContextMenuInteraction().getTarget();
-            logger.info("User to give points: {}", targetUser.getDiscriminatedName());
-            event.getUserContextMenuInteraction().createImmediateResponder()
-                    .setContent("Processing points for " + targetUser.getDisplayName(event.getUserContextMenuInteraction().getServer().get()) + "...")
-                    .respond().join();
-            CompletableFuture.runAsync(() -> processContextMenuCommand(event));
-        }
-        if (event.getUserContextMenuInteraction().getCommandName().equalsIgnoreCase("Check Points")) {
-            logger.info("Check Points context menu command received.");
-
-            User targetUser = event.getUserContextMenuInteraction().getTarget();
-            Server server = event.getUserContextMenuInteraction().getServer().orElse(null);
-
-            if (server == null) {
-                event.getUserContextMenuInteraction().createImmediateResponder()
-                        .setContent("Error: Couldn't retrieve server information.")
-                        .setFlags(MessageFlag.EPHEMERAL)
-                        .respond().join();
-                return;
-            }
-
-            // Find the target user's character name
-            String characterName = getCharacterNameByDiscordUid(targetUser.getId());
-            if (characterName == null) {
-                event.getUserContextMenuInteraction().createImmediateResponder()
-                        .setContent("Error: No OSRS character linked to this user.")
-                        .setFlags(MessageFlag.EPHEMERAL)
-                        .respond().join();
-                return;
-            }
-
-            if (characterName.equalsIgnoreCase(targetUser.getName())){
-                event.getUserContextMenuInteraction().createImmediateResponder()
-                        .setContent("Listen here... snowflake. 302 is about giving!")
-                        .setFlags(MessageFlag.EPHEMERAL)
-                        .respond().join();
-                return;
-            }
-
-            // Get points for the character
-            int points = getUserPoints(characterName);
-            event.getUserContextMenuInteraction().createImmediateResponder()
-                    .setContent(targetUser.getDisplayName(server) + " has " + points + " points.")
-                    .setFlags(MessageFlag.EPHEMERAL)
-                    .respond().join();
         }
     }
 
@@ -294,6 +239,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                 return;
             }
 
+            // Retrieve the character name associated with the user's Discord UID
             String characterName = getCharacterNameByDiscordUid(discordUid);
             if (characterName == null) {
                 event.getSlashCommandInteraction().createFollowupMessageBuilder()
@@ -302,18 +248,22 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                 return;
             }
 
+            // Check if a mention, points, and reason were provided
             logger.info("Attempting to retrieve optional arguments...");
-            User mentionedUser = event.getSlashCommandInteraction().getOptionUserValueByName("user").orElse(null);
+            Optional<User> mentionedUserOpt = event.getSlashCommandInteraction().getOptionUserValueByName("user");
+            Optional<Role> mentionedRoleOpt = event.getSlashCommandInteraction().getOptionRoleValueByName("role");
             Optional<Long> pointsOpt = event.getSlashCommandInteraction().getOptionLongValueByName("points");
             String reason = event.getSlashCommandInteraction().getOptionStringValueByName("reason").orElse("No reason provided");
 
-            logger.info("Mentioned user: {}", mentionedUser != null ? mentionedUser.getDiscriminatedName() : "None");
             logger.info("Points: {}", pointsOpt.orElse(0L));
             logger.info("Reason: {}", reason);
 
             int points = pointsOpt.map(Long::intValue).orElse(0);
-
-            if (mentionedUser != null && points != 0) {
+            logger.info("mentionedUserOpt: {}", mentionedUserOpt);
+            logger.info("mentionedRoleOpt: {}", mentionedRoleOpt);
+            if (mentionedUserOpt.isPresent() && points != 0) {
+                // Handle adding or removing points for an individual user
+                User mentionedUser = mentionedUserOpt.get();
                 String mentionedCharacterName = getCharacterNameByDiscordUid(mentionedUser.getId());
                 logger.info("Attempting to modify points for: {}", mentionedCharacterName);
 
@@ -324,9 +274,12 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                     return;
                 }
 
+                // Fetch current points of the mentioned user
                 int currentPoints = getUserPoints(mentionedCharacterName);
 
+                // Check if the action is to remove points
                 if (points < 0) {
+                    // Check if the user has the MANAGE_SERVER permission
                     if (!hasPermissionToRemovePoints(server, user)) {
                         event.getSlashCommandInteraction().createFollowupMessageBuilder()
                                 .setContent("You do not have permission to remove points.")
@@ -334,6 +287,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                         return;
                     }
 
+                    // Ensure the user cannot remove more points than the user currently has
                     if (currentPoints + points < 0) {
                         event.getSlashCommandInteraction().createFollowupMessageBuilder()
                                 .setContent("Cannot remove more points than the user currently has. " + mentionedCharacterName + " has " + currentPoints + " points.")
@@ -349,31 +303,74 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                     return;
                 }
 
+                // Check how many points the giver has given in the last 24 hours to the recipient
                 int pointsGivenInLast24Hours = getPointsGivenInLast24Hours(characterName, mentionedCharacterName);
-                if (pointsGivenInLast24Hours + points > 5) {
+                if (pointsGivenInLast24Hours + points > 3500) {
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
-                            .setContent("You have already given " + pointsGivenInLast24Hours + " points to " + mentionedCharacterName + " in the last 24 hours. You can only give a maximum of 5 points per 24 hours to the same user.")
+                            .setContent("You have already given " + pointsGivenInLast24Hours + " points to " + mentionedCharacterName + " in the last 24 hours. You can only give a maximum of 3500 points per 24 hours to the same user.")
                             .send();
                     return;
                 }
 
+                // Update points for the mentioned user
                 updateUserPoints(mentionedCharacterName, points);
+
+                // Log the transaction
                 int newPoints = currentPoints + points;
                 logPointsTransaction(mentionedCharacterName, points, reason, characterName, currentPoints, newPoints);
 
+                // Post to the configured channel
                 String action = points > 0 ? "Received" : "Lost";
                 postPointsUpdate(server, mentionedCharacterName + " now has " + newPoints + " points! " + action + " " + Math.abs(points) + " from " + characterName + " for " + reason);
 
                 event.getSlashCommandInteraction().createFollowupMessageBuilder()
                         .setContent(mentionedCharacterName + " now has " + newPoints + " points.")
                         .send();
-            } else {
+            } else if (mentionedRoleOpt.isPresent() && points != 0) {
+                // Handle distributing points to all members of a role
+                Role mentionedRole = mentionedRoleOpt.get();
+                java.util.Set<User> usersInRole = mentionedRole.getUsers();
+
+                if (usersInRole.isEmpty()) {
+                    event.getSlashCommandInteraction().createFollowupMessageBuilder()
+                            .setContent("The role " + mentionedRole.getName() + " has no members.")
+                            .send();
+                    return;
+                }
+
+                int numUsers = usersInRole.size();
+                int pointsPerUser = points / numUsers;
+
+                if (pointsPerUser == 0) {
+                    event.getSlashCommandInteraction().createFollowupMessageBuilder()
+                            .setContent("You don't have enough points to give at least 1 point to each member of the role.")
+                            .send();
+                    return;
+                }
+
+                for (User roleUser : usersInRole) {
+                    String roleUserCharacterName = getCharacterNameByDiscordUid(roleUser.getId());
+                    if (roleUserCharacterName != null) {
+                        int currentPoints = getUserPoints(roleUserCharacterName);
+                        updateUserPoints(roleUserCharacterName, pointsPerUser);
+                        logPointsTransaction(roleUserCharacterName, pointsPerUser, reason, characterName, currentPoints, currentPoints + pointsPerUser);
+                    }
+                }
+
+                event.getSlashCommandInteraction().createFollowupMessageBuilder()
+                        .setContent("Distributed " + pointsPerUser + " points to " + numUsers + " users in the role " + mentionedRole.getName() + ".")
+                        .send();
+
+                postPointsUpdate(server, characterName + " distributed " + pointsPerUser + " points to " + numUsers + " users in the " + mentionedRole.getName() + " role for " + reason + ".");
+        } else {
+                // Fetch and display user's own points
                 int userPoints = getUserPoints(characterName);
                 String userRank = getUserRank(characterName);
                 int givenPoints = getUserGivenPoints(characterName);
                 int totalPoints = getRankTotalPoints(userRank);
                 int availablePoints = totalPoints - givenPoints;
 
+                // Fetch points received from other users
                 String pointsReceivedFromOthers = getPointsReceivedFromOthers(characterName);
 
                 event.getSlashCommandInteraction().createFollowupMessageBuilder()
@@ -390,54 +387,9 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
         }
     }
 
-    private void processContextMenuCommand(UserContextMenuCommandEvent event) {
-        try {
-            User user = event.getUserContextMenuInteraction().getUser();
-            long discordUid = user.getId();
-            Server server = event.getUserContextMenuInteraction().getServer().orElse(null);
-
-            if (server == null) {
-                event.getUserContextMenuInteraction().createFollowupMessageBuilder()
-                        .setContent("Error: Couldn't retrieve server information.")
-                        .send();
-                return;
-            }
-
-            String characterName = getCharacterNameByDiscordUid(discordUid);
-            if (characterName == null) {
-                event.getUserContextMenuInteraction().createFollowupMessageBuilder()
-                        .setContent("Error: No character name associated with your Discord account. Please use the `/name` command to link your OSRS character name to your Discord account first.")
-                        .send();
-                return;
-            }
-
-            User mentionedUser = event.getUserContextMenuInteraction().getTarget();
-            int points = 1; // Default points for context menu
-            String reason = "being awesome!"; // Default reason for context menu
-
-            handlePointsTransaction(server, characterName, mentionedUser, points, reason);
-        } catch (Exception e) {
-            event.getUserContextMenuInteraction().createFollowupMessageBuilder()
-                    .setContent("An error occurred while processing your request. Please try again later.")
-                    .send();
-        }
-    }
-
-    private void handlePointsTransaction(Server server, String characterName, User mentionedUser, int points, String reason) {
-        String mentionedCharacterName = getCharacterNameByDiscordUid(mentionedUser.getId());
-        updateUserPoints(mentionedCharacterName, points);
-
-        String channelId = getPointsChannelId();
-        if (channelId != null) {
-            server.getTextChannelById(channelId).ifPresent(channel ->
-                channel.sendMessage("User " + mentionedUser.getDisplayName(server) +
-                        " received " + points + " points from " + characterName + " for: " + reason)
-            );
-        } else {
-            logger.warn("Points channel ID is null. No message posted.");
-        }
-    }
-
+    /**
+     * This method will fetch the list of points the user has received from others in descending order by points received.
+     */
     private String getPointsReceivedFromOthers(String characterName) {
         String query = "SELECT related_user, SUM(points_change) AS total_points " +
                 "FROM points_transactions " +

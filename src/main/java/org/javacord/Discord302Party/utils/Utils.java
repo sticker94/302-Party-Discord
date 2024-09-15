@@ -37,8 +37,8 @@ public class Utils {
                 return "<:owner:1280283101943169119>";
             case "deputy_owner":
                 return "<:deputy_owner:1280283136277876777>";
-            case "legacy":
-                return "<:legacy:1280283214497189979>";
+            case "anchor":
+                return "<:anchor:1280283214497189979>";
             case "mentor":
                 return "<:mentor:1280283178858446888>";
             case "moderator":

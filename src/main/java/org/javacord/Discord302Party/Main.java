@@ -66,15 +66,21 @@ public class Main {
         // Initialize UserVerificationService
         UserVerificationService userVerificationService = new UserVerificationService();
 
+        removeExistingCommands(api, guildId);
+
         // Register all commands
         registerCommands(api, guildId, server, womGroupUpdater, rankRequirementUpdater, userVerificationService);
 
         // Add listeners for Slash Commands and Select Menu interactions
         ViewRankRequirementsCommand viewRankRequirementsCommand = new ViewRankRequirementsCommand();
 
+        // Add listeners for UserContext and Slash Commands with Points
+        PointsCommand pointsCommand = new PointsCommand();
+
         api.addSlashCommandCreateListener(new NameCommand());
         api.addSlashCommandCreateListener(new VerifyCommand());
-        api.addSlashCommandCreateListener(new PointsCommand());
+        api.addSlashCommandCreateListener(pointsCommand); // Register points command as both a slash command and user context menu
+        api.addUserContextMenuCommandListener(pointsCommand); // Register the user context menu
         api.addSlashCommandCreateListener(new ConfigCommand());
         api.addSlashCommandCreateListener(new CheckRankUpCommand());
         api.addSlashCommandCreateListener(new SetRankRequirementsCommand());
@@ -85,6 +91,8 @@ public class Main {
         api.addSlashCommandCreateListener(new RunUpdatersCommand(womGroupUpdater, rankRequirementUpdater, userVerificationService));
         api.addSlashCommandCreateListener(new VerifyAllUsersCommand(userVerificationService));
         api.addSlashCommandCreateListener(new WomGroupValidatorCommand());
+        api.addSlashCommandCreateListener(new ModPointsCommand());
+        api.addSlashCommandCreateListener(new OwnerPointsCommand());
 
         // Log a message, if the bot joined or left a server
         api.addServerJoinListener(event -> logger.info("Joined server {}", event.getServer().getName()));
@@ -92,13 +100,75 @@ public class Main {
     }
 
     private static void removeExistingCommands(DiscordApi api, long guildId) {
+        // Remove guild-specific commands
         api.getServerById(guildId).ifPresent(guild -> guild.getSlashCommands().thenAccept(commands -> {
             commands.forEach(command -> {
-                command.deleteForServer(guildId); // Delete each command
-                logger.info("Deleted command: {}", command.getName());
+                command.deleteForServer(guildId); // Delete each guild-specific command
+                logger.info("Deleted guild-specific command: {}", command.getName());
             });
-            logger.info("All guild commands have been deleted.");
+            logger.info("All guild-specific commands have been deleted.");
         }));
+
+        // Remove global commands
+        api.getGlobalSlashCommands().thenAccept(globalCommands -> {
+            globalCommands.forEach(command -> {
+                command.deleteGlobal(); // Delete each global command
+                command.deleteForServer(guildId);
+                logger.info("Deleted global command: {}", command.getName());
+            });
+            logger.info("All global commands have been deleted.");
+        });
+        api.getGlobalMessageContextMenus().thenAccept(globalMessageContextMenus -> {
+            globalMessageContextMenus.forEach(command -> {
+                command.deleteGlobal();
+                command.deleteForServer(guildId);
+            });
+        });
+        api.getGlobalApplicationCommands().thenAccept(globalApplicationCommands -> {
+            globalApplicationCommands.forEach(command -> {
+                command.deleteForServer(guildId);
+                command.deleteGlobal();
+                logger.info("Deleted global command: {}", command.getName());
+            });
+        });
+        // Remove all guild-specific slash commands
+        api.getServerById(guildId).ifPresent(guild -> guild.getSlashCommands().thenAccept(commands -> {
+            commands.forEach(command -> {
+                command.deleteForServer(guildId); // Delete guild-specific slash command
+                logger.info("Deleted guild-specific slash command: {}", command.getName());
+            });
+            logger.info("All guild-specific slash commands have been deleted.");
+        }));
+
+        // Remove all global slash commands
+        api.getGlobalSlashCommands().thenAccept(globalCommands -> {
+            globalCommands.forEach(command -> {
+                command.deleteGlobal(); // Delete global slash command
+                command.deleteForServer(guildId);
+                logger.info("Deleted global slash command: {}", command.getName());
+            });
+            logger.info("All global slash commands have been deleted.");
+        });
+
+        // Remove all global message context menus
+        api.getGlobalMessageContextMenus().thenAccept(globalMenus -> {
+            globalMenus.forEach(menu -> {
+                menu.deleteGlobal(); // Delete global message context
+                menu.deleteForServer(guildId);
+                logger.info("Deleted global message context menu: {}", menu.getName());
+            });
+            logger.info("All global message context menus have been deleted.");
+        });
+
+        // Remove all global user context menus
+        api.getGlobalUserContextMenus().thenAccept(globalMenus -> {
+            globalMenus.forEach(menu -> {
+                menu.deleteGlobal(); // Delete global user context menu
+                menu.deleteForServer(guildId);
+                logger.info("Deleted global user context menu: {}", menu.getName());
+            });
+            logger.info("All global user context menus have been deleted.");
+        });
     }
 
     private static void registerCommands(DiscordApi api, long guildId, Server server, WOMGroupUpdater womGroupUpdater, RankRequirementUpdater rankRequirementUpdater, UserVerificationService userVerificationService) {
@@ -134,11 +204,31 @@ public class Main {
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "verification_key", "Your verification key", true))
                 .createForServer(api.getServerById(guildId).get()).join();
 
+        // Register the "Give Points" user context menu command
+        // UserContextMenu.with("Give Points").createForServer(api.getServerById(guildId).get()).join();
+
+        // Register the new context menu command for checking points
+        UserContextMenu.with("Check Points").createForServer(api.getServerById(guildId).get()).join();
+
         // Register the "points" command with optional user mention, points, and reason
         SlashCommand.with("points", "Check your points or give points to another user with an optional reason.")
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.USER, "user", "The Discord user you want to give points to", false))
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.LONG, "points", "The amount of points you want to give", false))
                 .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "reason", "The reason for giving points", false))
+                .createForServer(api.getServerById(guildId).get()).join();
+
+        SlashCommand.with("mod_points", "Check your points or give points to another user with an optional reason.")
+                .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.USER, "user", "The Discord user you want to give points to", true))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.LONG, "points", "The amount of points you want to give", true))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "reason", "The reason for giving points", true))
+                .createForServer(api.getServerById(guildId).get()).join();
+
+        SlashCommand.with("owner_points", "Check your points or give points to another user with an optional reason.")
+                .setDefaultEnabledForPermissions(PermissionType.ADMINISTRATOR)
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.ROLE, "role", "The Discord user you want to give points to", true))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.LONG, "points", "The amount of points you want to give", true))
+                .addOption(SlashCommandOption.create(SlashCommandOptionType.STRING, "reason", "The reason for giving points", true))
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "config" command to set the points logging channel
