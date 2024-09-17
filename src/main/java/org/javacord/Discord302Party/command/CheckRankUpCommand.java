@@ -1,14 +1,16 @@
 package org.javacord.Discord302Party.command;
 
 import io.github.cdimascio.dotenv.Dotenv;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.javacord.api.entity.message.embed.EmbedBuilder;
 import org.javacord.api.event.interaction.SlashCommandCreateEvent;
 import org.javacord.api.listener.interaction.SlashCommandCreateListener;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import java.awt.*;
 import java.sql.*;
+import java.util.HashSet;
+import java.util.Set;
 
 public class CheckRankUpCommand implements SlashCommandCreateListener {
 
@@ -27,7 +29,7 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
     public void onSlashCommandCreate(SlashCommandCreateEvent event) {
         if (event.getSlashCommandInteraction().getCommandName().equalsIgnoreCase("check_rank_up")) {
             try (Connection connection = connect()) {
-                String query = "SELECT " +
+                String query = "SELECT DISTINCT " +
                         "    m.username, " +
                         "    m.rank AS current_rank, " +
                         "    m.points AS current_points, " +
@@ -57,46 +59,60 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                 try (PreparedStatement preparedStatement = connection.prepareStatement(query);
                      ResultSet resultSet = preparedStatement.executeQuery()) {
 
-                    StringBuilder response = new StringBuilder();
                     EmbedBuilder embedBuilder = new EmbedBuilder();
                     embedBuilder.setTitle("Players Eligible for Rank-Up")
                             .setColor(Color.GREEN);
 
                     boolean hasResults = false;
+                    Set<String> processedUsers = new HashSet<>();  // Track processed usernames
 
                     while (resultSet.next()) {
-                        hasResults = true;
                         String username = resultSet.getString("username");
+
+                        // If the username is already processed, skip to avoid duplicates
+                        if (processedUsers.contains(username)) {
+                            continue;
+                        }
+
+                        // Add to processed set
+                        processedUsers.add(username);
+
+                        hasResults = true;
                         String currentRank = resultSet.getString("current_rank");
                         String nextRank = resultSet.getString("next_rank");
                         int points = resultSet.getInt("current_points");
                         String requiredPoints = resultSet.getString("required_points_for_next_rank");
                         String requirementType = resultSet.getString("requirement_type");
 
-                        String rankUpInfo = "Current Rank: " + currentRank + "\nNext Rank: " + nextRank;
+                        // Truncate username to 25 characters max
+                        if (username.length() > 25) {
+                            username = username.substring(0, 22) + "...";
+                        }
 
+                        // Generate rank-up info
+                        String rankUpInfo = "Current Rank: " + currentRank + "\nNext Rank: " + nextRank;
                         if (!"other".equalsIgnoreCase(requirementType)) {
                             rankUpInfo += "\nPoints: " + points + " (Required: " + requiredPoints + ")";
                         } else {
                             rankUpInfo += "\nSpecial Requirement: Validated";
                         }
 
-                        response.append(username)
-                                .append(" - ").append(rankUpInfo).append("\n");
+                        // Truncate rankUpInfo if it exceeds the 1024-character limit
+                        if (rankUpInfo.length() > 1024) {
+                            rankUpInfo = rankUpInfo.substring(0, 1021) + "...";  // Truncate if too long
+                        }
 
-                        // Add to embed for structured display
+                        // Add the field with the player's name as the title and their rank-up info as the value
                         embedBuilder.addField(username, rankUpInfo);
                     }
 
                     if (!hasResults) {
-                        response = new StringBuilder("No players are eligible for rank-up.");
-                        embedBuilder.setDescription(response.toString());
+                        embedBuilder.setDescription("No players are eligible.");
                     }
 
                     event.getSlashCommandInteraction().createImmediateResponder()
                             .addEmbed(embedBuilder)
                             .respond().join();
-
                 }
             } catch (SQLException e) {
                 logger.error("Error checking rank-up eligibility", e);

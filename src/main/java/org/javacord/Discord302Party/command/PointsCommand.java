@@ -69,23 +69,27 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
     }
 
     private int getUserGivenPoints(String characterName) {
-        String query = "SELECT given_points FROM members WHERE username = ?";
+        // Query to sum the points given by the character
+        String query = "SELECT SUM(points_change) AS total_given_points " +
+                "FROM points_transactions WHERE related_user = ? and timestamp >= NOW() - INTERVAL 1 DAY ";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, characterName);
             try (ResultSet resultSet = preparedStatement.executeQuery()) {
                 if (resultSet.next()) {
-                    logger.info("Given points found for character name: {}", characterName);
-                    return resultSet.getInt("given_points");
+                    int totalGivenPoints = resultSet.getInt("total_given_points");
+                    logger.info("Total given points found for character name: {}", characterName);
+                    return totalGivenPoints;
                 } else {
-                    logger.warn("No given points found for character name: {}", characterName);
+                    logger.warn("No points transactions found for character name: {}", characterName);
                 }
             }
         } catch (SQLException e) {
             logger.error("SQL Exception while fetching user given points: ", e);
         }
-        return 0;
+        return 0;  // Return 0 if no points found or an error occurred
     }
+
 
     private int getRankTotalPoints(String rank) {
         String query = "SELECT total_points FROM config WHERE `rank` = ?";
@@ -215,6 +219,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
             // Send an initial "Processing..." response to avoid timing out
             event.getSlashCommandInteraction().createImmediateResponder()
                     .setContent("Processing your request, please wait...")
+                    .setFlags(MessageFlag.EPHEMERAL)
                     .respond().join();
 
             // Handle command processing asynchronously
@@ -224,12 +229,13 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
 
     @Override
     public void onUserContextMenuCommand(UserContextMenuCommandEvent event) {
-        if (event.getUserContextMenuInteraction().getCommandName().equalsIgnoreCase("Give Points")) {
+        if (event.getUserContextMenuInteraction().getCommandName().equalsIgnoreCase("Give 1 Point")) {
             logger.info("Points context menu command received.");
             User targetUser = event.getUserContextMenuInteraction().getTarget();
             logger.info("User to give points: {}", targetUser.getDiscriminatedName());
             event.getUserContextMenuInteraction().createImmediateResponder()
-                    .setContent("Processing points for " + targetUser.getDisplayName(event.getUserContextMenuInteraction().getServer().get()) + "...")
+                    .setContent("Processing point for " + targetUser.getDisplayName(event.getUserContextMenuInteraction().getServer().get()) + "...")
+                    .setFlags(MessageFlag.EPHEMERAL)
                     .respond().join();
             CompletableFuture.runAsync(() -> processContextMenuCommand(event));
         }
@@ -252,14 +258,6 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
             if (characterName == null) {
                 event.getUserContextMenuInteraction().createImmediateResponder()
                         .setContent("Error: No OSRS character linked to this user.")
-                        .setFlags(MessageFlag.EPHEMERAL)
-                        .respond().join();
-                return;
-            }
-
-            if (characterName.equalsIgnoreCase(targetUser.getName())){
-                event.getUserContextMenuInteraction().createImmediateResponder()
-                        .setContent("Listen here... snowflake. 302 is about giving!")
                         .setFlags(MessageFlag.EPHEMERAL)
                         .respond().join();
                 return;
@@ -290,6 +288,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                 logger.error("Server information could not be retrieved.");
                 event.getSlashCommandInteraction().createFollowupMessageBuilder()
                         .setContent("Error: Couldn't retrieve server information.")
+                        .setFlags(MessageFlag.EPHEMERAL)
                         .send();
                 return;
             }
@@ -298,6 +297,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
             if (characterName == null) {
                 event.getSlashCommandInteraction().createFollowupMessageBuilder()
                         .setContent("Error: No character name associated with your Discord account. Please use the `/name` command to link your OSRS character name to your Discord account first.")
+                        .setFlags(MessageFlag.EPHEMERAL)
                         .send();
                 return;
             }
@@ -320,6 +320,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                 if (mentionedCharacterName == null) {
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
                             .setContent(mentionedUser.getDisplayName(server) + " isn't registered to a character.")
+                            .setFlags(MessageFlag.EPHEMERAL)
                             .send();
                     return;
                 }
@@ -330,6 +331,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                     if (!hasPermissionToRemovePoints(server, user)) {
                         event.getSlashCommandInteraction().createFollowupMessageBuilder()
                                 .setContent("You do not have permission to remove points.")
+                                .setFlags(MessageFlag.EPHEMERAL)
                                 .send();
                         return;
                     }
@@ -337,6 +339,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                     if (currentPoints + points < 0) {
                         event.getSlashCommandInteraction().createFollowupMessageBuilder()
                                 .setContent("Cannot remove more points than the user currently has. " + mentionedCharacterName + " has " + currentPoints + " points.")
+                                .setFlags(MessageFlag.EPHEMERAL)
                                 .send();
                         return;
                     }
@@ -345,6 +348,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                 if (characterName.equalsIgnoreCase(mentionedCharacterName)){
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
                             .setContent("**Listen here... snowflake**: 302 is about giving! You can't award yourself points, but we appreciate that you tried.")
+                            .setFlags(MessageFlag.EPHEMERAL)
                             .send();
                     return;
                 }
@@ -353,6 +357,18 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                 if (pointsGivenInLast24Hours + points > 5) {
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
                             .setContent("You have already given " + pointsGivenInLast24Hours + " points to " + mentionedCharacterName + " in the last 24 hours. You can only give a maximum of 5 points per 24 hours to the same user.")
+                            .setFlags(MessageFlag.EPHEMERAL)
+                            .send();
+                    return;
+                }
+                int userPoints = getUserPoints(characterName);
+                String userRank = getUserRank(characterName);
+                int givenPoints = getUserGivenPoints(characterName);
+                int totalPoints = getRankTotalPoints(userRank);
+                if ((givenPoints + points) > totalPoints){
+                    event.getSlashCommandInteraction().createFollowupMessageBuilder()
+                            .setContent("You have " + Math.subtractExact(totalPoints, givenPoints) + " points to give currently. You need " + points + ".")
+                            .setFlags(MessageFlag.EPHEMERAL)
                             .send();
                     return;
                 }
@@ -366,6 +382,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
 
                 event.getSlashCommandInteraction().createFollowupMessageBuilder()
                         .setContent(mentionedCharacterName + " now has " + newPoints + " points.")
+                        .setFlags(MessageFlag.EPHEMERAL)
                         .send();
             } else {
                 int userPoints = getUserPoints(characterName);
@@ -380,12 +397,14 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                         .setContent("You have " + userPoints + " points.\n" +
                                 "You have " + availablePoints + "/" + totalPoints + " points remaining to give.\n" +
                                 "Points received from others:\n" + pointsReceivedFromOthers)
+                        .setFlags(MessageFlag.EPHEMERAL)
                         .send();
             }
         } catch (Exception e) {
             logger.error("Error processing points command: ", e);
             event.getSlashCommandInteraction().createFollowupMessageBuilder()
                     .setContent("An error occurred while processing your request. Please try again later.")
+                    .setFlags(MessageFlag.EPHEMERAL)
                     .send();
         }
     }
@@ -399,6 +418,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
             if (server == null) {
                 event.getUserContextMenuInteraction().createFollowupMessageBuilder()
                         .setContent("Error: Couldn't retrieve server information.")
+                        .setFlags(MessageFlag.EPHEMERAL)
                         .send();
                 return;
             }
@@ -407,21 +427,102 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
             if (characterName == null) {
                 event.getUserContextMenuInteraction().createFollowupMessageBuilder()
                         .setContent("Error: No character name associated with your Discord account. Please use the `/name` command to link your OSRS character name to your Discord account first.")
+                        .setFlags(MessageFlag.EPHEMERAL)
                         .send();
                 return;
             }
 
             User mentionedUser = event.getUserContextMenuInteraction().getTarget();
-            int points = 1; // Default points for context menu
+            if (mentionedUser == null) {
+                event.getUserContextMenuInteraction().createFollowupMessageBuilder()
+                        .setContent("Error: Could not retrieve the mentioned user.")
+                        .setFlags(MessageFlag.EPHEMERAL)
+                        .send();
+                return;
+            }
+
+            // Default points for context menu
+            int points = 1;
             String reason = "being awesome!"; // Default reason for context menu
 
-            handlePointsTransaction(server, characterName, mentionedUser, points, reason);
+            String mentionedCharacterName = getCharacterNameByDiscordUid(mentionedUser.getId());
+            if (mentionedCharacterName == null) {
+                event.getUserContextMenuInteraction().createFollowupMessageBuilder()
+                        .setContent(mentionedUser.getDisplayName(server) + " isn't registered to a character.")
+                        .send();
+                return;
+            }
+
+            if (characterName.equalsIgnoreCase(mentionedCharacterName)) {
+                event.getUserContextMenuInteraction().createFollowupMessageBuilder()
+                        .setContent("**Listen here... snowflake**: 302 is about giving! You can't award yourself points, but we appreciate that you tried.")
+                        .setFlags(MessageFlag.EPHEMERAL)
+                        .send();
+                return;
+            }
+
+            int currentPoints = getUserPoints(mentionedCharacterName);
+
+            if (points < 0) {
+                if (!hasPermissionToRemovePoints(server, user)) {
+                    event.getUserContextMenuInteraction().createFollowupMessageBuilder()
+                            .setContent("You do not have permission to remove points.")
+                            .setFlags(MessageFlag.EPHEMERAL)
+                            .send();
+                    return;
+                }
+
+                if (currentPoints + points < 0) {
+                    event.getUserContextMenuInteraction().createFollowupMessageBuilder()
+                            .setContent("Cannot remove more points than the user currently has. " + mentionedCharacterName + " has " + currentPoints + " points.")
+                            .setFlags(MessageFlag.EPHEMERAL)
+                            .send();
+                    return;
+                }
+            }
+
+            int pointsGivenInLast24Hours = getPointsGivenInLast24Hours(characterName, mentionedCharacterName);
+            if (pointsGivenInLast24Hours + points > 5) {
+                event.getUserContextMenuInteraction().createFollowupMessageBuilder()
+                        .setContent("You have already given " + pointsGivenInLast24Hours + " points to " + mentionedCharacterName + " in the last 24 hours. You can only give a maximum of 5 points per 24 hours to the same user.")
+                        .setFlags(MessageFlag.EPHEMERAL)
+                        .send();
+                return;
+            }
+
+            int userPoints = getUserPoints(characterName);
+            String userRank = getUserRank(characterName);
+            int givenPoints = getUserGivenPoints(characterName);
+            int totalPoints = getRankTotalPoints(userRank);
+            if ((givenPoints + points) > totalPoints){
+                event.getUserContextMenuInteraction().createFollowupMessageBuilder()
+                        .setContent("You have " + Math.subtractExact(totalPoints, givenPoints) + " points to give currently. You must wait.")
+                        .setFlags(MessageFlag.EPHEMERAL)
+                        .send();
+                return;
+            }
+
+            // Update points and log the transaction
+            updateUserPoints(mentionedCharacterName, points);
+            int newPoints = currentPoints + points;
+            logPointsTransaction(mentionedCharacterName, points, reason, characterName, currentPoints, newPoints);
+
+            String action = points > 0 ? "Received" : "Lost";
+            postPointsUpdate(server, mentionedCharacterName + " now has " + newPoints + " points! " + action + " " + Math.abs(points) + " from " + characterName + " for " + reason);
+
+            event.getUserContextMenuInteraction().createFollowupMessageBuilder()
+                    .setContent(mentionedCharacterName + " now has " + newPoints + " points.")
+                    .setFlags(MessageFlag.EPHEMERAL)
+                    .send();
+
         } catch (Exception e) {
+            logger.error("Error processing context menu points command: ", e);
             event.getUserContextMenuInteraction().createFollowupMessageBuilder()
                     .setContent("An error occurred while processing your request. Please try again later.")
                     .send();
         }
     }
+
 
     private void handlePointsTransaction(Server server, String characterName, User mentionedUser, int points, String reason) {
         String mentionedCharacterName = getCharacterNameByDiscordUid(mentionedUser.getId());

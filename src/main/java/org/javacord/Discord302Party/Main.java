@@ -66,7 +66,7 @@ public class Main {
         // Initialize UserVerificationService
         UserVerificationService userVerificationService = new UserVerificationService();
 
-        removeExistingCommands(api, guildId);
+        /* removeExistingCommands(api, guildId); */
 
         // Register all commands
         registerCommands(api, guildId, server, womGroupUpdater, rankRequirementUpdater, userVerificationService);
@@ -76,6 +76,9 @@ public class Main {
 
         // Add listeners for UserContext and Slash Commands with Points
         PointsCommand pointsCommand = new PointsCommand();
+
+        // Add dual listeners for LinkOSRSNameCommand
+        LinkOSRSNameCommand linkOSRSNameCommand = new LinkOSRSNameCommand();
 
         api.addSlashCommandCreateListener(new NameCommand());
         api.addSlashCommandCreateListener(new VerifyCommand());
@@ -93,6 +96,8 @@ public class Main {
         api.addSlashCommandCreateListener(new WomGroupValidatorCommand());
         api.addSlashCommandCreateListener(new ModPointsCommand());
         api.addSlashCommandCreateListener(new OwnerPointsCommand());
+        api.addUserContextMenuCommandListener(linkOSRSNameCommand); // Register user context and message listener for OSRSNameCommand
+        api.addMessageCreateListener(linkOSRSNameCommand); // #2
 
         // Log a message, if the bot joined or left a server
         api.addServerJoinListener(event -> logger.info("Joined server {}", event.getServer().getName()));
@@ -205,10 +210,15 @@ public class Main {
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "Give Points" user context menu command
-        // UserContextMenu.with("Give Points").createForServer(api.getServerById(guildId).get()).join();
+        UserContextMenu.with("Give 1 Point").createForServer(api.getServerById(guildId).get()).join();
 
         // Register the new context menu command for checking points
         UserContextMenu.with("Check Points").createForServer(api.getServerById(guildId).get()).join();
+
+        // Register a context menu command for Mods to link character names
+        UserContextMenu.with("Link OSRS Name")
+                .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER) // Only available to moderators with Manage Server permission
+                .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "points" command with optional user mention, points, and reason
         SlashCommand.with("points", "Check your points or give points to another user with an optional reason.")

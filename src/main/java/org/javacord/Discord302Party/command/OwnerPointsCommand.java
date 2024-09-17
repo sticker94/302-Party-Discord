@@ -3,6 +3,7 @@ package org.javacord.Discord302Party.command;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.javacord.api.entity.message.MessageFlag;
 import org.javacord.api.entity.permission.Role;
 import org.javacord.api.entity.server.Server;
 import org.javacord.api.entity.user.User;
@@ -283,6 +284,7 @@ public class OwnerPointsCommand implements SlashCommandCreateListener {
                     if (!hasPermissionToRemovePoints(server, user)) {
                         event.getSlashCommandInteraction().createFollowupMessageBuilder()
                                 .setContent("You do not have permission to remove points.")
+                                .setFlags(MessageFlag.EPHEMERAL)
                                 .send();
                         return;
                     }
@@ -299,6 +301,7 @@ public class OwnerPointsCommand implements SlashCommandCreateListener {
                 if (characterName.equalsIgnoreCase(mentionedCharacterName)){
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
                             .setContent("**Listen here... snowflake**: 302 is about giving! You can't award yourself points, but we appreciate that you tried.")
+                            .setFlags(MessageFlag.EPHEMERAL)
                             .send();
                     return;
                 }
@@ -308,6 +311,7 @@ public class OwnerPointsCommand implements SlashCommandCreateListener {
                 if (pointsGivenInLast24Hours + points > 3500) {
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
                             .setContent("You have already given " + pointsGivenInLast24Hours + " points to " + mentionedCharacterName + " in the last 24 hours. You can only give a maximum of 3500 points per 24 hours to the same user.")
+                            .setFlags(MessageFlag.EPHEMERAL)
                             .send();
                     return;
                 }
@@ -344,6 +348,7 @@ public class OwnerPointsCommand implements SlashCommandCreateListener {
                 if (pointsPerUser == 0) {
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
                             .setContent("You don't have enough points to give at least 1 point to each member of the role.")
+                            .setFlags(MessageFlag.EPHEMERAL)
                             .send();
                     return;
                 }
@@ -359,6 +364,7 @@ public class OwnerPointsCommand implements SlashCommandCreateListener {
 
                 event.getSlashCommandInteraction().createFollowupMessageBuilder()
                         .setContent("Distributed " + pointsPerUser + " points to " + numUsers + " users in the role " + mentionedRole.getName() + ".")
+                        .setFlags(MessageFlag.EPHEMERAL)
                         .send();
 
                 postPointsUpdate(server, characterName + " distributed " + pointsPerUser + " points to " + numUsers + " users in the " + mentionedRole.getName() + " role for " + reason + ".");
@@ -377,6 +383,7 @@ public class OwnerPointsCommand implements SlashCommandCreateListener {
                         .setContent("You have " + userPoints + " points.\n" +
                                 "You have " + availablePoints + "/" + totalPoints + " points remaining to give.\n" +
                                 "Points received from others:\n" + pointsReceivedFromOthers)
+                        .setFlags(MessageFlag.EPHEMERAL)
                         .send();
             }
         } catch (Exception e) {
