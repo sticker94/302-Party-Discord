@@ -4,9 +4,7 @@ import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.javacord.Discord302Party.command.*;
-import org.javacord.Discord302Party.service.RankRequirementUpdater;
-import org.javacord.Discord302Party.service.UserVerificationService;
-import org.javacord.Discord302Party.service.WOMGroupUpdater;
+import org.javacord.Discord302Party.service.*;
 import org.javacord.Discord302Party.utils.Utils;
 import org.javacord.api.DiscordApi;
 import org.javacord.api.DiscordApiBuilder;
@@ -98,6 +96,8 @@ public class Main {
         api.addSlashCommandCreateListener(new OwnerPointsCommand());
         api.addUserContextMenuCommandListener(linkOSRSNameCommand); // Register user context and message listener for OSRSNameCommand
         api.addMessageCreateListener(linkOSRSNameCommand); // #2
+        api.addSlashCommandCreateListener(new PointsReactionCommand());
+
 
         // Log a message, if the bot joined or left a server
         api.addServerJoinListener(event -> logger.info("Joined server {}", event.getServer().getName()));
@@ -300,6 +300,11 @@ public class Main {
                 .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
                 .createForServer(api.getServerById(guildId).get()).join();
 
+
+        //Register the "pointsreaction" command
+        SlashCommand.with("pointsreaction", "Reaction giveaway for 1 point per user.")
+                .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
+                .createForServer(api.getServerById(guildId).get()).join();
 
         logger.info("Commands registered for guild: {}", guildId);
     }

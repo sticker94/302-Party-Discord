@@ -34,7 +34,9 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                         "    m.rank AS current_rank, " +
                         "    m.points AS current_points, " +
                         "    r_next.rank AS next_rank, " +
+                        "    r_down.rank AS prev_rank, " +
                         "    rr.required_value AS required_points_for_next_rank, " +
+                        "    rr_down.required_value AS required_points_for_prev_rank, " +
                         "    rr.requirement_type " +
                         "FROM " +
                         "    members m " +
@@ -47,12 +49,21 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                         "        WHERE rank_order < r_current.rank_order " +
                         "    ) " +
                         "LEFT JOIN " +
+                        "    config r_down ON r_down.rank_order = (" +
+                        "        SELECT MIN(rank_order) " +
+                        "        FROM config " +
+                        "        WHERE rank_order > r_current.rank_order " +
+                        "    ) " +
+                        "LEFT JOIN " +
                         "    rank_requirements rr ON rr.rank = r_next.rank " +
+                        "LEFT JOIN " +
+                        "    rank_requirements rr_down ON rr_down.rank = r_down.rank " +
                         "LEFT JOIN " +
                         "    validation_log vl ON m.username = vl.character_name AND rr.rank = vl.rank AND rr.id = vl.requirement_id " +
                         "WHERE " +
                         "    (rr.requirement_type != 'other' AND m.points >= rr.required_value) " +
                         "    OR (rr.requirement_type = 'other' AND vl.id IS NOT NULL) " +
+                        "    OR (m.points < rr_down.required_value) " +
                         "ORDER BY " +
                         "    r_current.rank_order;";
 
@@ -60,7 +71,7 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                      ResultSet resultSet = preparedStatement.executeQuery()) {
 
                     EmbedBuilder embedBuilder = new EmbedBuilder();
-                    embedBuilder.setTitle("Players Eligible for Rank-Up")
+                    embedBuilder.setTitle("Players Eligible for Rank-Up/Rank-Down")
                             .setColor(Color.GREEN);
 
                     boolean hasResults = false;
@@ -80,8 +91,10 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                         hasResults = true;
                         String currentRank = resultSet.getString("current_rank");
                         String nextRank = resultSet.getString("next_rank");
+                        String prevRank = resultSet.getString("prev_rank");
                         int points = resultSet.getInt("current_points");
-                        String requiredPoints = resultSet.getString("required_points_for_next_rank");
+                        String requiredPointsNext = resultSet.getString("required_points_for_next_rank");
+                        String requiredPointsPrev = resultSet.getString("required_points_for_prev_rank");
                         String requirementType = resultSet.getString("requirement_type");
 
                         // Truncate username to 25 characters max
@@ -89,12 +102,21 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                             username = username.substring(0, 22) + "...";
                         }
 
-                        // Generate rank-up info
-                        String rankUpInfo = "Current Rank: " + currentRank + "\nNext Rank: " + nextRank;
-                        if (!"other".equalsIgnoreCase(requirementType)) {
-                            rankUpInfo += "\nPoints: " + points + " (Required: " + requiredPoints + ")";
+                        // Check if they need a rank-up or rank-down
+                        boolean isRankDown = points < Integer.parseInt(requiredPointsPrev);
+                        Color sideColor = isRankDown ? Color.RED : Color.GREEN;  // Red if rank down, green otherwise
+                        String rankUpInfo;
+
+                        if (isRankDown) {
+                            rankUpInfo = "Current Rank: " + currentRank + "\nPrevious Rank: " + prevRank +
+                                    "\nPoints: " + points + " (Required for current rank: " + requiredPointsPrev + ")";
                         } else {
-                            rankUpInfo += "\nSpecial Requirement: Validated";
+                            rankUpInfo = "Current Rank: " + currentRank + "\nNext Rank: " + nextRank;
+                            if (!"other".equalsIgnoreCase(requirementType)) {
+                                rankUpInfo += "\nPoints: " + points + " (Required: " + requiredPointsNext + ")";
+                            } else {
+                                rankUpInfo += "\nSpecial Requirement: Validated";
+                            }
                         }
 
                         // Truncate rankUpInfo if it exceeds the 1024-character limit
@@ -102,12 +124,13 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                             rankUpInfo = rankUpInfo.substring(0, 1021) + "...";  // Truncate if too long
                         }
 
-                        // Add the field with the player's name as the title and their rank-up info as the value
-                        embedBuilder.addField(username, rankUpInfo);
+                        // Add the field with the player's name as the title and their rank-up/down info as the value
+                        embedBuilder.addField(username, rankUpInfo, false)
+                                .setColor(sideColor);  // Highlight left side based on rank-up or rank-down
                     }
 
                     if (!hasResults) {
-                        embedBuilder.setDescription("No players are eligible.");
+                        embedBuilder.setDescription("No players are eligible for rank-up or rank-down.");
                     }
 
                     event.getSlashCommandInteraction().createImmediateResponder()
@@ -115,9 +138,9 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                             .respond().join();
                 }
             } catch (SQLException e) {
-                logger.error("Error checking rank-up eligibility", e);
+                logger.error("Error checking rank-up/down eligibility", e);
                 event.getSlashCommandInteraction().createImmediateResponder()
-                        .setContent("Failed to check rank-up eligibility.")
+                        .setContent("Failed to check rank-up/down eligibility.")
                         .respond().join();
             }
         }
