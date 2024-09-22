@@ -4,7 +4,9 @@ import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.javacord.Discord302Party.command.*;
-import org.javacord.Discord302Party.service.*;
+import org.javacord.Discord302Party.service.RankRequirementUpdater;
+import org.javacord.Discord302Party.service.UserVerificationService;
+import org.javacord.Discord302Party.service.WOMGroupUpdater;
 import org.javacord.Discord302Party.utils.Utils;
 import org.javacord.api.DiscordApi;
 import org.javacord.api.DiscordApiBuilder;
@@ -75,6 +77,8 @@ public class Main {
         // Add listeners for UserContext and Slash Commands with Points
         PointsCommand pointsCommand = new PointsCommand();
 
+        ItemAutocompleteListener itemAutocompleteListener = new ItemAutocompleteListener();
+
         // Add dual listeners for LinkOSRSNameCommand
         LinkOSRSNameCommand linkOSRSNameCommand = new LinkOSRSNameCommand();
 
@@ -97,6 +101,11 @@ public class Main {
         api.addUserContextMenuCommandListener(linkOSRSNameCommand); // Register user context and message listener for OSRSNameCommand
         api.addMessageCreateListener(linkOSRSNameCommand); // #2
         api.addSlashCommandCreateListener(new PointsReactionCommand());
+        api.addSlashCommandCreateListener(new ItemPriceCommand());
+        // Register the item autocomplete listener
+        api.addAutocompleteCreateListener(itemAutocompleteListener);
+        api.addSlashCommandCreateListener(new FlipCommand());
+        api.addSlashCommandCreateListener(new MoneymakeCommand());
 
 
         // Log a message, if the bot joined or left a server
@@ -185,6 +194,13 @@ public class Main {
                 .setName("rank")
                 .setDescription("Select a rank to view its requirements")
                 .setRequired(false);
+
+        SlashCommandOptionBuilder items = new SlashCommandOptionBuilder()
+                .setType(SlashCommandOptionType.STRING)
+                .setName("item")
+                .setDescription("Search for the item")
+                .setAutocompletable(true)
+                .setRequired(true);
 
         // Add each rank as a choice to the rank option, including the custom emoji if available
         for (String rank : ranks) {
@@ -300,11 +316,39 @@ public class Main {
                 .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
                 .createForServer(api.getServerById(guildId).get()).join();
 
-
         //Register the "pointsreaction" command
         SlashCommand.with("pointsreaction", "Reaction giveaway for 1 point per user.")
                 .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
                 .createForServer(api.getServerById(guildId).get()).join();
+
+        // Register the "item_price" command
+        SlashCommand.with("item_price", "Fetch item price from GE Tracker")
+                .addOption(items.build())
+                .createForServer(api.getServerById(guildId).get())
+                .join();
+
+        // Register the "flip" command
+        SlashCommand.with("flip", "Flip the whole game.")
+                .createForServer(api.getServerById(guildId).get()).join();
+
+        // Register a nested moneymake command
+        SlashCommand command =
+                SlashCommand.with("moneymake", "Shows money-making methods related to smithing",
+                                Arrays.asList(
+                                        SlashCommandOption.createWithOptions(SlashCommandOptionType.SUB_COMMAND_GROUP, "smithing", "Smithing-related methods",
+                                                Arrays.asList(
+                                                        SlashCommandOption.createWithOptions(SlashCommandOptionType.SUB_COMMAND, "blast-furnace", "Show the best blast furnace smithing methods",
+                                                                Arrays.asList(
+                                                                        SlashCommandOption.create(SlashCommandOptionType.STRING, "bar", "The type of bar to smith (optional)", false)
+                                                                )
+                                                        )
+                                                )
+                                        )
+                                )
+                        )
+                        .createForServer(api.getServerById(guildId).get())
+                        .join();
+
 
         logger.info("Commands registered for guild: {}", guildId);
     }

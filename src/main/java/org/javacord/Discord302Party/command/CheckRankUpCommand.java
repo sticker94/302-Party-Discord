@@ -29,50 +29,40 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
     public void onSlashCommandCreate(SlashCommandCreateEvent event) {
         if (event.getSlashCommandInteraction().getCommandName().equalsIgnoreCase("check_rank_up")) {
             try (Connection connection = connect()) {
-                String query = "SELECT DISTINCT " +
-                        "    m.username, " +
-                        "    m.rank AS current_rank, " +
-                        "    m.points AS current_points, " +
-                        "    r_next.rank AS next_rank, " +
-                        "    r_down.rank AS prev_rank, " +
-                        "    rr.required_value AS required_points_for_next_rank, " +
-                        "    rr_down.required_value AS required_points_for_prev_rank, " +
-                        "    rr.requirement_type " +
-                        "FROM " +
-                        "    members m " +
-                        "JOIN " +
-                        "    config r_current ON m.rank = r_current.rank " +
-                        "LEFT JOIN " +
-                        "    config r_next ON r_next.rank_order = (" +
-                        "        SELECT MAX(rank_order) " +
-                        "        FROM config " +
-                        "        WHERE rank_order < r_current.rank_order " +
-                        "    ) " +
-                        "LEFT JOIN " +
-                        "    config r_down ON r_down.rank_order = (" +
-                        "        SELECT MIN(rank_order) " +
-                        "        FROM config " +
-                        "        WHERE rank_order > r_current.rank_order " +
-                        "    ) " +
-                        "LEFT JOIN " +
-                        "    rank_requirements rr ON rr.rank = r_next.rank " +
-                        "LEFT JOIN " +
-                        "    rank_requirements rr_down ON rr_down.rank = r_down.rank " +
-                        "LEFT JOIN " +
-                        "    validation_log vl ON m.username = vl.character_name AND rr.rank = vl.rank AND rr.id = vl.requirement_id " +
-                        "WHERE " +
-                        "    (rr.requirement_type != 'other' AND m.points >= rr.required_value) " +
-                        "    OR (rr.requirement_type = 'other' AND vl.id IS NOT NULL) " +
-                        "    OR (m.points < rr_down.required_value) " +
-                        "ORDER BY " +
-                        "    r_current.rank_order;";
+                String query = "WITH RankedRanks AS ( " +
+                        "  SELECT m.username, " +
+                        "         m.rank AS current_rank, " +
+                        "         m.points AS current_points, " +
+                        "         rr.rank AS matching_rank, " +
+                        "         CAST(rr.required_value AS UNSIGNED) AS required_points_for_matching_rank, " +
+                        "         r.rank_order AS matching_rank_order, " +
+                        "         rr.requirement_type, " +
+                        "         ROW_NUMBER() OVER (PARTITION BY m.username ORDER BY CAST(rr.required_value AS UNSIGNED) DESC) AS rank_position " +
+                        "  FROM members m " +
+                        "  JOIN rank_requirements rr ON CAST(m.points AS UNSIGNED) >= CAST(rr.required_value AS UNSIGNED) " +
+                        "  JOIN config r ON rr.rank = r.rank " +
+                        "  WHERE rr.requirement_type != 'other' " +
+                        "    AND rr.required_value REGEXP '^[0-9]+$' " +
+                        "    AND m.rank NOT IN ('owner', 'deputy_owner') " +
+                        ") " +
+                        "SELECT rr.username, " +
+                        "       rr.current_rank, " +
+                        "       rr.current_points, " +
+                        "       rr.matching_rank AS correct_rank, " +
+                        "       r_current.rank_order AS current_rank_order, " +
+                        "       rr.matching_rank_order AS correct_rank_order, " +
+                        "       rr.required_points_for_matching_rank " +
+                        "FROM RankedRanks rr " +
+                        "JOIN config r_current ON rr.current_rank = r_current.rank " +
+                        "WHERE rr.rank_position = 1 " +
+                        "  AND r_current.rank_order <> rr.matching_rank_order " +
+                        "ORDER BY rr.username;";
 
                 try (PreparedStatement preparedStatement = connection.prepareStatement(query);
                      ResultSet resultSet = preparedStatement.executeQuery()) {
 
                     EmbedBuilder embedBuilder = new EmbedBuilder();
-                    embedBuilder.setTitle("Players Eligible for Rank-Up/Rank-Down")
-                            .setColor(Color.GREEN);
+                    embedBuilder.setTitle("Players Eligible for Rank-Up/Rank-Down");
 
                     boolean hasResults = false;
                     Set<String> processedUsers = new HashSet<>();  // Track processed usernames
@@ -90,43 +80,33 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
 
                         hasResults = true;
                         String currentRank = resultSet.getString("current_rank");
-                        String nextRank = resultSet.getString("next_rank");
-                        String prevRank = resultSet.getString("prev_rank");
+                        String correctRank = resultSet.getString("correct_rank");
                         int points = resultSet.getInt("current_points");
-                        String requiredPointsNext = resultSet.getString("required_points_for_next_rank");
-                        String requiredPointsPrev = resultSet.getString("required_points_for_prev_rank");
-                        String requirementType = resultSet.getString("requirement_type");
+                        int requiredPointsNext = resultSet.getInt("required_points_for_matching_rank");
+                        int currentRankOrder = resultSet.getInt("current_rank_order");
+                        int correctRankOrder = resultSet.getInt("correct_rank_order");
+
+                        // Determine if it's a rank-up or rank-down situation
+                        boolean isRankDown = correctRankOrder > currentRankOrder;
+                        String rankDirection = isRankDown ? "Rank Down" : "Rank Up";
+                        Color sideColor = isRankDown ? Color.RED : Color.GREEN;
+
+                        String rankInfo = "Current Rank: " + currentRank + "\n" + rankDirection + ": " + correctRank +
+                                "\nPoints: " + points + " (Required: " + requiredPointsNext + ")";
 
                         // Truncate username to 25 characters max
                         if (username.length() > 25) {
                             username = username.substring(0, 22) + "...";
                         }
 
-                        // Check if they need a rank-up or rank-down
-                        boolean isRankDown = points < Integer.parseInt(requiredPointsPrev);
-                        Color sideColor = isRankDown ? Color.RED : Color.GREEN;  // Red if rank down, green otherwise
-                        String rankUpInfo;
-
-                        if (isRankDown) {
-                            rankUpInfo = "Current Rank: " + currentRank + "\nPrevious Rank: " + prevRank +
-                                    "\nPoints: " + points + " (Required for current rank: " + requiredPointsPrev + ")";
-                        } else {
-                            rankUpInfo = "Current Rank: " + currentRank + "\nNext Rank: " + nextRank;
-                            if (!"other".equalsIgnoreCase(requirementType)) {
-                                rankUpInfo += "\nPoints: " + points + " (Required: " + requiredPointsNext + ")";
-                            } else {
-                                rankUpInfo += "\nSpecial Requirement: Validated";
-                            }
-                        }
-
-                        // Truncate rankUpInfo if it exceeds the 1024-character limit
-                        if (rankUpInfo.length() > 1024) {
-                            rankUpInfo = rankUpInfo.substring(0, 1021) + "...";  // Truncate if too long
+                        // Truncate rankInfo if it exceeds the 1024-character limit
+                        if (rankInfo.length() > 1024) {
+                            rankInfo = rankInfo.substring(0, 1021) + "...";  // Truncate if too long
                         }
 
                         // Add the field with the player's name as the title and their rank-up/down info as the value
-                        embedBuilder.addField(username, rankUpInfo, false)
-                                .setColor(sideColor);  // Highlight left side based on rank-up or rank-down
+                        embedBuilder.addField(username, rankInfo, false)
+                                .setColor(sideColor);  // Highlight based on rank-up or rank-down
                     }
 
                     if (!hasResults) {
