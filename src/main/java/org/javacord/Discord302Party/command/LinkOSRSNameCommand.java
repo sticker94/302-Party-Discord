@@ -151,13 +151,10 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
                 if (isMemberInClan(osrsCharacterName)) {
                     messageEvent.getChannel().sendMessage("OSRS character " + osrsCharacterName + " is recognized! Proceeding with linking.");
                     handleSuccessfulLinkOnMessage(messageEvent, targetUserRef.get(), server, osrsCharacterName);
-
-                    // After processing the input, remove the listener
-                    messageEvent.getApi().removeListener(this);
+                    return;
                 } else {
                     messageEvent.getChannel().sendMessage("The provided OSRS character name is not a member of the clan.");
-                    // After sending the error message, remove the listener to prevent spamming
-                    messageEvent.getApi().removeListener(this);
+                    return;
                 }
             }
         }
