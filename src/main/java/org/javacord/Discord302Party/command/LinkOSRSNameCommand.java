@@ -65,16 +65,32 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
             ResultSet resultSet = preparedStatement.executeQuery();
             if (resultSet.next()) {
                 long existingDiscordUid = resultSet.getLong("discord_uid");
-                return existingDiscordUid != discordUid;
+                if (existingDiscordUid != discordUid) {
+                    saveToDuplicateTable(discordUid, characterName);  // Log the duplicate entry
+                    return true;  // Duplicate detected
+                }
             }
+        } catch (SQLException e) {
+            e.printStackTrace();  // Log the error
+        }
+        return false;  // No duplicate found
+    }
+
+    private void saveToDuplicateTable(long discordUid, String characterName) {
+        String query = "INSERT INTO duplicate_entries (discord_uid, character_name) VALUES (?, ?)";
+        try (Connection connection = connect();
+             PreparedStatement preparedStatement = connection.prepareStatement(query)) {
+            preparedStatement.setLong(1, discordUid);
+            preparedStatement.setString(2, characterName);
+            preparedStatement.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        return false;
     }
 
+
     private void saveUserDetails(long discordUid, String characterName, String rank) {
-        String query = "INSERT INTO discord_users (discord_uid, character_name, rank) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE rank = VALUES(rank)";
+        String query = "INSERT INTO discord_users (discord_uid, character_name, rank) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE character_name = VALUES(character_name), rank = VALUES(rank)";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setLong(1, discordUid);
@@ -151,10 +167,12 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
                 if (isMemberInClan(osrsCharacterName)) {
                     messageEvent.getChannel().sendMessage("OSRS character " + osrsCharacterName + " is recognized! Proceeding with linking.");
                     handleSuccessfulLinkOnMessage(messageEvent, targetUserRef.get(), server, osrsCharacterName);
-                    return;
+                    messageEvent.getApi().removeListener(this);
+                    messageEvent.getApi().addUserContextMenuCommandListener(this);
                 } else {
                     messageEvent.getChannel().sendMessage("The provided OSRS character name is not a member of the clan.");
-                    return;
+                    messageEvent.getApi().removeListener(this);
+                    messageEvent.getApi().addUserContextMenuCommandListener(this);
                 }
             }
         }
