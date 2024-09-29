@@ -68,7 +68,7 @@ public class Utils {
             case "sentry":
                 return "<:sentry:1280282905742016582>";
             case "learner":
-                return "<:learner:1280282712858558464>";
+                return "<:learner:1290092925190930442>";
             default:
                 return null; // No custom emoji found for this rank
         }
