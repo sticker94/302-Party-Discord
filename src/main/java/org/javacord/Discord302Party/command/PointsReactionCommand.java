@@ -12,6 +12,8 @@ import org.javacord.api.util.logging.ExceptionLogger;
 
 import java.sql.*;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -24,6 +26,9 @@ public class PointsReactionCommand implements SlashCommandCreateListener {
     private static final String DB_URL = "jdbc:mysql://" + dotenv.get("DB_HOST") + ":3306/" + dotenv.get("DB_NAME");
     private static final String USER = dotenv.get("DB_USER");
     private static final String PASS = dotenv.get("DB_PASS");
+
+    // Set to track users who have already reacted
+    private final Set<Long> reactedUsers = new HashSet<>();
 
     private Connection connect() throws SQLException {
         logger.info("Attempting to connect to the database...");
@@ -93,12 +98,23 @@ public class PointsReactionCommand implements SlashCommandCreateListener {
 
     private void handleUserPointAddition(User user, Server server, Message message) {
         long discordUid = user.getId();
+
+        // Check if the user has already reacted
+        if (reactedUsers.contains(discordUid)) {
+            logger.warn("User {} has already reacted. Ignoring reaction.", user.getDiscriminatedName());
+            return; // Ignore if they already reacted
+        }
+
         String characterName = getCharacterNameByDiscordUid(discordUid);
 
         if (characterName != null) {
             int pointsToAdd = 1;  // We add 1 point per reaction
             updateUserPoints(characterName, pointsToAdd);
             logger.info("Added {} points to {}", pointsToAdd, characterName);
+
+            // Add the user to the set to prevent multiple reactions
+            reactedUsers.add(discordUid);
+
             String logMessage = user.getDisplayName(server) + " has received 1 point!";
             logToPointsChannel(server, logMessage);  // Log to the points log channel
         } else {
@@ -144,6 +160,7 @@ public class PointsReactionCommand implements SlashCommandCreateListener {
                                             // Delete the message after 10 minutes
                                             CompletableFuture.delayedExecutor(10, TimeUnit.MINUTES).execute(() -> {
                                                 message.delete().join();
+                                                reactedUsers.clear();  // Clear the set after the giveaway ends
                                             });
                                         }).exceptionally(ExceptionLogger.get());
                                     }).exceptionally(ExceptionLogger.get());
