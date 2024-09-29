@@ -67,8 +67,8 @@ public class Utils {
                 return "<:justiciar:1280282766671351919>";
             case "sentry":
                 return "<:sentry:1280282905742016582>";
-            case "bulwark":
-                return "<:bulwark:1280282712858558464>";
+            case "learner":
+                return "<:learner:1280282712858558464>";
             default:
                 return null; // No custom emoji found for this rank
         }
