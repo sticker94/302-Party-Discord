@@ -3,6 +3,7 @@ package org.javacord.Discord302Party.command;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.javacord.api.entity.message.MessageFlag;
 import org.javacord.api.entity.server.Server;
 import org.javacord.api.entity.user.User;
 import org.javacord.api.event.interaction.SlashCommandCreateEvent;
@@ -234,6 +235,7 @@ public class ModPointsCommand implements SlashCommandCreateListener {
                 logger.error("Server information could not be retrieved.");
                 event.getSlashCommandInteraction().createFollowupMessageBuilder()
                         .setContent("Error: Couldn't retrieve server information.")
+                        .setFlags(MessageFlag.EPHEMERAL)
                         .send();
                 return;
             }
@@ -243,6 +245,7 @@ public class ModPointsCommand implements SlashCommandCreateListener {
             if (characterName == null) {
                 event.getSlashCommandInteraction().createFollowupMessageBuilder()
                         .setContent("Error: No character name associated with your Discord account. Please use the `/name` command to link your OSRS character name to your Discord account first.")
+                        .setFlags(MessageFlag.EPHEMERAL)
                         .send();
                 return;
             }
@@ -267,6 +270,7 @@ public class ModPointsCommand implements SlashCommandCreateListener {
                 if (mentionedCharacterName == null) {
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
                             .setContent(mentionedUser.getDisplayName(server) + " isn't registered to a character.")
+                            .setFlags(MessageFlag.EPHEMERAL)
                             .send();
                     return;
                 }
@@ -280,6 +284,7 @@ public class ModPointsCommand implements SlashCommandCreateListener {
                     if (!hasPermissionToRemovePoints(server, user)) {
                         event.getSlashCommandInteraction().createFollowupMessageBuilder()
                                 .setContent("You do not have permission to remove points.")
+                                .setFlags(MessageFlag.EPHEMERAL)
                                 .send();
                         return;
                     }
@@ -288,6 +293,7 @@ public class ModPointsCommand implements SlashCommandCreateListener {
                     if (currentPoints + points < 0) {
                         event.getSlashCommandInteraction().createFollowupMessageBuilder()
                                 .setContent("Cannot remove more points than the user currently has. " + mentionedCharacterName + " has " + currentPoints + " points.")
+                                .setFlags(MessageFlag.EPHEMERAL)
                                 .send();
                         return;
                     }
@@ -296,6 +302,7 @@ public class ModPointsCommand implements SlashCommandCreateListener {
                 if (characterName.equalsIgnoreCase(mentionedCharacterName)){
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
                             .setContent("**Listen here... snowflake**: 302 is about giving! You can't award yourself points, but we appreciate that you tried.")
+                            .setFlags(MessageFlag.EPHEMERAL)
                             .send();
                     return;
                 }
@@ -305,6 +312,7 @@ public class ModPointsCommand implements SlashCommandCreateListener {
                 if (pointsGivenInLast24Hours + points > 3250) {
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
                             .setContent("You have already given " + pointsGivenInLast24Hours + " points to " + mentionedCharacterName + " in the last 24 hours. You can only give a maximum of 3250 points per 24 hours to the same user.")
+                            .setFlags(MessageFlag.EPHEMERAL)
                             .send();
                     return;
                 }
@@ -322,6 +330,7 @@ public class ModPointsCommand implements SlashCommandCreateListener {
 
                 event.getSlashCommandInteraction().createFollowupMessageBuilder()
                         .setContent(mentionedCharacterName + " now has " + newPoints + " points.")
+                        .setFlags(MessageFlag.EPHEMERAL)
                         .send();
             } else {
                 // Fetch and display user's own points
@@ -338,12 +347,14 @@ public class ModPointsCommand implements SlashCommandCreateListener {
                         .setContent("You have " + userPoints + " points.\n" +
                                 "You have " + availablePoints + "/" + totalPoints + " points remaining to give.\n" +
                                 "Points received from others:\n" + pointsReceivedFromOthers)
+                        .setFlags(MessageFlag.EPHEMERAL)
                         .send();
             }
         } catch (Exception e) {
             logger.error("Error processing points command: ", e);
             event.getSlashCommandInteraction().createFollowupMessageBuilder()
                     .setContent("An error occurred while processing your request. Please try again later.")
+                    .setFlags(MessageFlag.EPHEMERAL)
                     .send();
         }
     }
