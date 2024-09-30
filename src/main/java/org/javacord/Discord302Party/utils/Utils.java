@@ -37,6 +37,20 @@ public class Utils {
                 return "<:owner:1280283101943169119>";
             case "deputy_owner":
                 return "<:deputy_owner:1280283136277876777>";
+            case "serenist":
+                return "<:serenist:1290456230846005318>";
+            case "seer":
+                return "<:seer:1290456201049673769>";
+            case "merchant":
+                return "<:merchant:1290456383459819581>";
+            case "law":
+                return "<:law:1290456356318609523>";
+            case "death":
+                return "<:death:1290456329055502397>";
+            case "beast":
+                return "<:beast:1290456300257542205>";
+            case "imp":
+                return "<:imp1:1290456260772102165>";
             case "anchor":
                 return "<:anchor:1280283214497189979>";
             case "mentor":
