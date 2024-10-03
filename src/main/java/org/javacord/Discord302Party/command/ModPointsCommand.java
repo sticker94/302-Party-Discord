@@ -212,7 +212,9 @@ public class ModPointsCommand implements SlashCommandCreateListener {
             // Send an initial "Processing..." response to avoid timing out
             event.getSlashCommandInteraction().createImmediateResponder()
                     .setContent("Processing your request, please wait...")
-                    .respond().join();
+                    .setFlags(MessageFlag.EPHEMERAL)
+                    .respond()
+                    .join();
 
             // Handle command processing asynchronously
             CompletableFuture.runAsync(() -> processPointsCommand(event));
