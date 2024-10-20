@@ -226,7 +226,7 @@ public class Main {
                 .createForServer(api.getServerById(guildId).get()).join();
 
         // Register the "Give Points" user context menu command
-        UserContextMenu.with("Give 1 Point").createForServer(api.getServerById(guildId).get()).join();
+        UserContextMenu.with("Give 3 Points").createForServer(api.getServerById(guildId).get()).join();
 
         // Register the new context menu command for checking points
         UserContextMenu.with("Check Points").createForServer(api.getServerById(guildId).get()).join();
