@@ -247,12 +247,12 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
 
     @Override
     public void onUserContextMenuCommand(UserContextMenuCommandEvent event) {
-        if (event.getUserContextMenuInteraction().getCommandName().equalsIgnoreCase("Give 1 Point")) {
+        if (event.getUserContextMenuInteraction().getCommandName().equalsIgnoreCase("Give 3 Points")) {
             logger.info("Points context menu command received.");
             User targetUser = event.getUserContextMenuInteraction().getTarget();
             logger.info("User to give points: {}", targetUser.getDiscriminatedName());
             event.getUserContextMenuInteraction().createImmediateResponder()
-                    .setContent("Processing point for " + targetUser.getDisplayName(event.getUserContextMenuInteraction().getServer().get()) + "...")
+                    .setContent("Processing points for " + targetUser.getDisplayName(event.getUserContextMenuInteraction().getServer().get()) + "...")
                     .setFlags(MessageFlag.EPHEMERAL)
                     .respond().join();
             CompletableFuture.runAsync(() -> processContextMenuCommand(event));
@@ -469,7 +469,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
             }
 
             // Default points for context menu
-            int points = 1;
+            int points = 3;
             String reason = "being awesome!"; // Default reason for context menu
 
             String mentionedCharacterName = getCharacterNameByDiscordUid(mentionedUser.getId());
@@ -508,10 +508,20 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                 }
             }
 
-            int pointsGivenInLast24Hours = getPointsGivenInLast24Hours(characterName, mentionedCharacterName);
-            if (pointsGivenInLast24Hours + points > 5) {
+                /*
+                int pointsGivenInLast24Hours = getPointsGivenInLast24Hours(characterName, mentionedCharacterName);
+                if (pointsGivenInLast24Hours + points > 5) {
+                    event.getUserContextMenuInteraction().createFollowupMessageBuilder()
+                            .setContent("You have already given " + pointsGivenInLast24Hours + " points to " + mentionedCharacterName + " in the last 24 hours. You can only give a maximum of 5 points per 24 hours to the same user.")
+                            .setFlags(MessageFlag.EPHEMERAL)
+                            .send();
+                    return;
+                }
+                 */
+            int pointsGivenInLastWeek = getPointsGivenInLastWeek(characterName, mentionedCharacterName);
+            if (pointsGivenInLastWeek + points > 15) {
                 event.getUserContextMenuInteraction().createFollowupMessageBuilder()
-                        .setContent("You have already given " + pointsGivenInLast24Hours + " points to " + mentionedCharacterName + " in the last 24 hours. You can only give a maximum of 5 points per 24 hours to the same user.")
+                        .setContent("You have given " + pointsGivenInLastWeek + " points to " + mentionedCharacterName + " in the last week. You can only give a maximum of 15 points per week to the same user.")
                         .setFlags(MessageFlag.EPHEMERAL)
                         .send();
                 return;
