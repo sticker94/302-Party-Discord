@@ -83,6 +83,18 @@ public class Utils {
                 return "<:sentry:1280282905742016582>";
             case "learner":
                 return "<:learner:1290092925190930442>";
+            case "legend":
+                return "<:legend:129735659496249754>";
+            case "xerician":
+                return "<:xerician:1297356268964544572>";
+            case "astral":
+                return "<:astral:1297356299503140937>";
+            case "legacy":
+                return "<:legacy:1280283214497189979>";
+            case "sage":
+                return "<:sage:1297356242238312580>";
+            case "monarch":
+                return "<:monarch:1280282848485572661>";
             default:
                 return null; // No custom emoji found for this rank
         }

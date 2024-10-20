@@ -71,7 +71,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
     private int getUserGivenPoints(String characterName) {
         // Query to sum the points given by the character
         String query = "SELECT SUM(points_change) AS total_given_points " +
-                "FROM points_transactions WHERE related_user = ? and timestamp >= NOW() - INTERVAL 1 DAY ";
+                "FROM points_transactions WHERE related_user = ? and timestamp >= NOW() - INTERVAL 1 WEEK ";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, characterName);
@@ -149,6 +149,24 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
     private int getPointsGivenInLast24Hours(String giver, String recipient) {
         String query = "SELECT SUM(points_change) AS total_given FROM points_transactions " +
                 "WHERE related_user = ? AND character_name = ? AND timestamp >= NOW() - INTERVAL 1 DAY";
+        try (Connection connection = connect();
+             PreparedStatement preparedStatement = connection.prepareStatement(query)) {
+            preparedStatement.setString(1, giver);
+            preparedStatement.setString(2, recipient);
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                if (resultSet.next()) {
+                    return resultSet.getInt("total_given");
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("SQL Exception while checking points given in last 24 hours: ", e);
+        }
+        return 0;
+    }
+
+    private int getPointsGivenInLastWeek(String giver, String recipient) {
+        String query = "SELECT SUM(points_change) AS total_given FROM points_transactions " +
+                "WHERE related_user = ? AND character_name = ? AND timestamp >= NOW() - INTERVAL 7 DAY";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setString(1, giver);
@@ -352,11 +370,20 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                             .send();
                     return;
                 }
-
+                /*
                 int pointsGivenInLast24Hours = getPointsGivenInLast24Hours(characterName, mentionedCharacterName);
                 if (pointsGivenInLast24Hours + points > 5) {
                     event.getSlashCommandInteraction().createFollowupMessageBuilder()
                             .setContent("You have already given " + pointsGivenInLast24Hours + " points to " + mentionedCharacterName + " in the last 24 hours. You can only give a maximum of 5 points per 24 hours to the same user.")
+                            .setFlags(MessageFlag.EPHEMERAL)
+                            .send();
+                    return;
+                }
+                 */
+                int pointsGivenInLastWeek = getPointsGivenInLastWeek(characterName, mentionedCharacterName);
+                if (pointsGivenInLastWeek + points > 15) {
+                    event.getSlashCommandInteraction().createFollowupMessageBuilder()
+                            .setContent("You have given " + pointsGivenInLastWeek + " points to " + mentionedCharacterName + " in the last week. You can only give a maximum of 15 points per week to the same user.")
                             .setFlags(MessageFlag.EPHEMERAL)
                             .send();
                     return;
