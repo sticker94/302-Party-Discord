@@ -255,7 +255,27 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
                     .setContent("Processing points for " + targetUser.getDisplayName(event.getUserContextMenuInteraction().getServer().get()) + "...")
                     .setFlags(MessageFlag.EPHEMERAL)
                     .respond().join();
-            CompletableFuture.runAsync(() -> processContextMenuCommand(event));
+            CompletableFuture.runAsync(() -> processContextMenuCommand(event, 3));
+        }
+        if (event.getUserContextMenuInteraction().getCommandName().equalsIgnoreCase("Give 1 Point")) {
+            logger.info("Points context menu command received.");
+            User targetUser = event.getUserContextMenuInteraction().getTarget();
+            logger.info("User to give points: {}", targetUser.getDiscriminatedName());
+            event.getUserContextMenuInteraction().createImmediateResponder()
+                    .setContent("Processing points for " + targetUser.getDisplayName(event.getUserContextMenuInteraction().getServer().get()) + "...")
+                    .setFlags(MessageFlag.EPHEMERAL)
+                    .respond().join();
+            CompletableFuture.runAsync(() -> processContextMenuCommand(event, 1));
+        }
+        if (event.getUserContextMenuInteraction().getCommandName().equalsIgnoreCase("Give 5 Points")) {
+            logger.info("Points context menu command received.");
+            User targetUser = event.getUserContextMenuInteraction().getTarget();
+            logger.info("User to give points: {}", targetUser.getDiscriminatedName());
+            event.getUserContextMenuInteraction().createImmediateResponder()
+                    .setContent("Processing points for " + targetUser.getDisplayName(event.getUserContextMenuInteraction().getServer().get()) + "...")
+                    .setFlags(MessageFlag.EPHEMERAL)
+                    .respond().join();
+            CompletableFuture.runAsync(() -> processContextMenuCommand(event, 5));
         }
         if (event.getUserContextMenuInteraction().getCommandName().equalsIgnoreCase("Check Points")) {
             logger.info("Check Points context menu command received.");
@@ -436,7 +456,7 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
         }
     }
 
-    private void processContextMenuCommand(UserContextMenuCommandEvent event) {
+    private void processContextMenuCommand(UserContextMenuCommandEvent event, int points) {
         try {
             User user = event.getUserContextMenuInteraction().getUser();
             long discordUid = user.getId();
@@ -469,7 +489,6 @@ public class PointsCommand implements SlashCommandCreateListener, UserContextMen
             }
 
             // Default points for context menu
-            int points = 3;
             String reason = "being awesome!"; // Default reason for context menu
 
             String mentionedCharacterName = getCharacterNameByDiscordUid(mentionedUser.getId());
