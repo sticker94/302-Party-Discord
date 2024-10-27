@@ -43,7 +43,7 @@ public class CheckRankUpCommand implements SlashCommandCreateListener {
                         "  JOIN config r ON rr.rank = r.rank " +
                         "  WHERE rr.requirement_type != 'other' " +
                         "    AND rr.required_value REGEXP '^[0-9]+$' " +
-                        "    AND m.rank NOT IN ('owner', 'deputy_owner') " +
+                        "    AND m.rank NOT IN ('owner', 'deputy_owner', 'legacy', 'seer', 'merchant') " +
                         ") " +
                         "SELECT rr.username, " +
                         "       rr.current_rank, " +

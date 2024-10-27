@@ -66,7 +66,7 @@ public class Main {
         // Initialize UserVerificationService
         UserVerificationService userVerificationService = new UserVerificationService();
 
-        removeExistingCommands(api, guildId);
+        /* removeExistingCommands(api, guildId); */
 
         // Register all commands
         registerCommands(api, guildId, server, womGroupUpdater, rankRequirementUpdater, userVerificationService);
