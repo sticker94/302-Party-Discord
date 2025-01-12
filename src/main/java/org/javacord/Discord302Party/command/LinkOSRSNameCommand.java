@@ -22,9 +22,19 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
     private static final String USER = dotenv.get("DB_USER");
     private static final String PASS = dotenv.get("DB_PASS");
 
+    // References used to track who triggered the command, which user is being linked, etc.
     private AtomicReference<User> modUserRef = new AtomicReference<>();
     private AtomicReference<User> targetUserRef = new AtomicReference<>();
 
+    // Variables to handle overwrite flow
+    private AtomicReference<Boolean> awaitingOverwriteRef = new AtomicReference<>(false);
+    private AtomicReference<Long> pendingDiscordUidRef = new AtomicReference<>();
+    private AtomicReference<String> pendingCharacterNameRef = new AtomicReference<>();
+    private AtomicReference<UserContextMenuCommandEvent> pendingEventRef = new AtomicReference<>();
+
+    // ----------------------------------
+    // Database methods
+    // ----------------------------------
     private Connection connect() throws SQLException {
         return DriverManager.getConnection(DB_URL, USER, PASS);
     }
@@ -66,14 +76,15 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
             if (resultSet.next()) {
                 long existingDiscordUid = resultSet.getLong("discord_uid");
                 if (existingDiscordUid != discordUid) {
-                    saveToDuplicateTable(discordUid, characterName);  // Log the duplicate entry
-                    return true;  // Duplicate detected
+                    // Log the duplicate entry
+                    saveToDuplicateTable(discordUid, characterName);
+                    return true;
                 }
             }
         } catch (SQLException e) {
-            e.printStackTrace();  // Log the error
+            e.printStackTrace();
         }
-        return false;  // No duplicate found
+        return false;
     }
 
     private void saveToDuplicateTable(long discordUid, String characterName) {
@@ -88,9 +99,9 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
         }
     }
 
-
     private void saveUserDetails(long discordUid, String characterName, String rank) {
-        String query = "INSERT INTO discord_users (discord_uid, character_name, rank) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE character_name = VALUES(character_name), rank = VALUES(rank)";
+        String query = "INSERT INTO discord_users (discord_uid, character_name, rank) VALUES (?, ?, ?) "
+                + "ON DUPLICATE KEY UPDATE character_name = VALUES(character_name), rank = VALUES(rank)";
         try (Connection connection = connect();
              PreparedStatement preparedStatement = connection.prepareStatement(query)) {
             preparedStatement.setLong(1, discordUid);
@@ -102,6 +113,9 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
         }
     }
 
+    // ----------------------------------
+    // Main listener: user context menu
+    // ----------------------------------
     @Override
     public void onUserContextMenuCommand(UserContextMenuCommandEvent event) {
         if (event.getUserContextMenuInteraction().getCommandName().equalsIgnoreCase("Link OSRS Name")) {
@@ -113,10 +127,10 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
                 Server server = serverOptional.get();
                 targetUserRef.set(targetUser);
 
-                // Try using the target user's current nickname
+                // Use the target user's current nickname as a guess
                 String characterName = targetUser.getDisplayName(server);
 
-                // Initial response to avoid timeout
+                // Immediate response to avoid interaction timeout
                 event.getUserContextMenuInteraction().createImmediateResponder()
                         .setContent("Attempting to link OSRS name using the current nickname...")
                         .respond();
@@ -125,23 +139,34 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
 
                 // Check for duplicates
                 if (isDuplicateEntry(discordUid, characterName)) {
+                    // Prompt the user (moderator) if they want to overwrite
                     event.getUserContextMenuInteraction().createFollowupMessageBuilder()
-                            .setContent("Duplicate entry detected. The OSRS name is already linked to a different account.")
+                            .setContent("**Duplicate entry detected!** The OSRS name `" + characterName
+                                    + "` is already linked to a different Discord account.\n"
+                                    + "Would you like to **overwrite** the existing linkage? Reply `yes` or `no`.")
                             .send();
+
+                    // Store references for overwrite flow
+                    modUserRef.set(event.getUserContextMenuInteraction().getUser());   // Who triggered the command
+                    pendingDiscordUidRef.set(discordUid);
+                    pendingCharacterNameRef.set(characterName);
+                    pendingEventRef.set(event);
+                    awaitingOverwriteRef.set(true);
+
+                    // We do NOT return here; we just wait for the moderator’s yes/no.
                     return;
                 }
 
+                // If no duplicate, proceed with normal logic:
                 // Check if the character is in the clan
                 if (isMemberInClan(characterName)) {
-                    // Link the user and update roles as normal
                     handleSuccessfulLink(event, targetUser, server, characterName);
                 } else {
-                    // If the nickname doesn't match a clan member, ask for manual input via follow-up message
+                    // If the nickname doesn't match a clan member, ask for manual input
                     event.getUserContextMenuInteraction().createFollowupMessageBuilder()
-                            .setContent("The nickname is not recognized as a clan member. Please reply with the OSRS character name.")
+                            .setContent("The nickname `" + characterName + "` is not recognized as a clan member. "
+                                    + "Please reply with the correct OSRS character name.")
                             .send();
-
-                    // Store the moderator's user reference
                     modUserRef.set(event.getUserContextMenuInteraction().getUser());
                 }
             } else {
@@ -152,36 +177,117 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
         }
     }
 
+    // ----------------------------------
+    // Message create listener
+    // ----------------------------------
     @Override
     public void onMessageCreate(MessageCreateEvent messageEvent) {
-        // Check if the message is from the moderator and it's in the correct server
-        if (messageEvent.getMessageAuthor().isUser() &&
-                messageEvent.getMessageAuthor().asUser().get().equals(modUserRef.get())) {
+        // 1) Overwrite flow: if we are waiting for a yes/no from the mod
+        if (awaitingOverwriteRef.get()
+                && messageEvent.getMessageAuthor().isUser()
+                && messageEvent.getMessageAuthor().asUser().get().equals(modUserRef.get())) {
+
+            String content = messageEvent.getMessageContent().trim().toLowerCase();
+
+            if (content.equals("yes") || content.equals("no")) {
+                // Stop waiting for overwrite after this response
+                awaitingOverwriteRef.set(false);
+
+                if (content.equals("yes")) {
+                    // They agreed to overwrite => proceed with linking
+                    messageEvent.getChannel().sendMessage("Overwriting existing linkage...");
+                    overwriteExistingLink();
+                } else {
+                    // They declined
+                    messageEvent.getChannel().sendMessage("Not overwriting existing linkage. Cancelled.");
+                }
+
+                // Reset references so we don't accidentally reuse them
+                modUserRef.set(null);
+                pendingDiscordUidRef.set(null);
+                pendingCharacterNameRef.set(null);
+                pendingEventRef.set(null);
+
+                return;
+            }
+        }
+
+        // 2) The existing manual OSRS name flow
+        // Check if the message is from the moderator who was asked for a clan member name
+        if (messageEvent.getMessageAuthor().isUser()
+                && messageEvent.getMessageAuthor().asUser().get().equals(modUserRef.get())) {
 
             Server server = messageEvent.getServer().orElse(null);
             String osrsCharacterName = messageEvent.getMessageContent();
 
-            // Ensure we're working with a valid server
-            if (server != null) {
+            // Ensure we have a valid server
+            if (server != null && !awaitingOverwriteRef.get()) {
                 // Check if the manually entered character is in the clan
                 if (isMemberInClan(osrsCharacterName)) {
-                    messageEvent.getChannel().sendMessage("OSRS character " + osrsCharacterName + " is recognized! Proceeding with linking.");
+                    messageEvent.getChannel().sendMessage("OSRS character `" + osrsCharacterName
+                            + "` is recognized! Proceeding with linking.");
                     handleSuccessfulLinkOnMessage(messageEvent, targetUserRef.get(), server, osrsCharacterName);
-                    messageEvent.getApi().removeListener(this);
-                    messageEvent.getApi().addUserContextMenuCommandListener(this);
                 } else {
                     messageEvent.getChannel().sendMessage("The provided OSRS character name is not a member of the clan.");
-                    messageEvent.getApi().removeListener(this);
-                    messageEvent.getApi().addUserContextMenuCommandListener(this);
                 }
+
+                // Remove this listener from the API (clean up) and re-add context menu listener
+                messageEvent.getApi().removeListener(this);
+                messageEvent.getApi().addUserContextMenuCommandListener(this);
             }
         }
     }
 
+    /**
+     * Called if the user typed "yes" in response to the duplicate overwrite question.
+     * We do the same flow as a normal link, except we skip the 'duplicate' check since we are intentionally overwriting.
+     */
+    private void overwriteExistingLink() {
+        UserContextMenuCommandEvent event = pendingEventRef.get();
+        if (event == null) {
+            return;
+        }
+
+        Optional<Server> serverOptional = event.getUserContextMenuInteraction().getServer();
+        if (serverOptional.isEmpty()) {
+            event.getUserContextMenuInteraction().createFollowupMessageBuilder()
+                    .setContent("Error: No server found; cannot overwrite.")
+                    .send();
+            return;
+        }
+
+        Server server = serverOptional.get();
+        User targetUser = targetUserRef.get();
+        if (targetUser == null) {
+            event.getUserContextMenuInteraction().createFollowupMessageBuilder()
+                    .setContent("Error: No target user found; cannot overwrite.")
+                    .send();
+            return;
+        }
+
+        long discordUid = pendingDiscordUidRef.get();
+        String characterName = pendingCharacterNameRef.get();
+
+        // *At this point, we already know it's a "duplicate" scenario, but the user said "yes" to overwrite.*
+        // We can re-check clan membership or simply continue.
+        // Let's keep the same logic to ensure valid clan membership:
+        if (isMemberInClan(characterName)) {
+            // Proceed with linking (same as normal)
+            handleSuccessfulLink(event, targetUser, server, characterName);
+        } else {
+            event.getUserContextMenuInteraction().createFollowupMessageBuilder()
+                    .setContent("The nickname `" + characterName + "` is not recognized as a clan member. Overwrite aborted.")
+                    .send();
+        }
+    }
+
+    // ----------------------------------
+    // Linking methods
+    // ----------------------------------
     private void handleSuccessfulLink(UserContextMenuCommandEvent event, User targetUser, Server server, String characterName) {
         long discordUid = targetUser.getId();
 
-        // Set Discord nickname to the OSRS character name
+        // Update Discord nickname to OSRS name
         boolean nicknameUpdated = retryOperation(() ->
                 targetUser.updateNickname(server, characterName).exceptionally(ExceptionLogger.get())
         );
@@ -193,7 +299,7 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
             return;
         }
 
-        // Assign the "Green Party Hats" role by ID
+        // Assign "Green Party Hats" role
         Role greenPartyHatsRole = server.getRoleById("1168065194858119218").orElse(null);
         if (greenPartyHatsRole != null && !targetUser.getRoles(server).contains(greenPartyHatsRole)) {
             boolean roleAssigned = retryOperation(() ->
@@ -207,12 +313,12 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
             }
         }
 
-        // Assign the rank role based on the OSRS rank
+        // Determine OSRS rank and assign corresponding role
         String rank = getRank(characterName);
         if (rank != null) {
-            Role role = rank.equalsIgnoreCase("deputy_owner") ?
-                    server.getRolesByNameIgnoreCase("Co-Owner").stream().findFirst().orElse(null) :
-                    server.getRolesByNameIgnoreCase(rank).stream().findFirst().orElse(null);
+            Role role = rank.equalsIgnoreCase("deputy_owner")
+                    ? server.getRolesByNameIgnoreCase("Co-Owner").stream().findFirst().orElse(null)
+                    : server.getRolesByNameIgnoreCase(rank).stream().findFirst().orElse(null);
 
             if (role != null && !targetUser.getRoles(server).contains(role)) {
                 boolean rankRoleAssigned = retryOperation(() ->
@@ -225,12 +331,13 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
                     return;
                 }
             }
-            // Save the user details in the database
+
+            // Save user details in database
             saveUserDetails(discordUid, characterName, rank);
 
-            // Respond to the moderator with success
+            // Respond with success
             event.getUserContextMenuInteraction().createFollowupMessageBuilder()
-                    .setContent("OSRS name linked and roles updated for " + targetUser.getDisplayName(server) + "!")
+                    .setContent("OSRS name linked and roles updated for **" + targetUser.getDisplayName(server) + "**!")
                     .send();
         } else {
             event.getUserContextMenuInteraction().createFollowupMessageBuilder()
@@ -242,7 +349,6 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
     private void handleSuccessfulLinkOnMessage(MessageCreateEvent event, User targetUser, Server server, String characterName) {
         long discordUid = targetUser.getId();
 
-        // Set Discord nickname to the OSRS character name
         boolean nicknameUpdated = retryOperation(() ->
                 targetUser.updateNickname(server, characterName).exceptionally(ExceptionLogger.get())
         );
@@ -252,7 +358,7 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
             return;
         }
 
-        // Assign the "Green Party Hats" role by ID
+        // Assign "Green Party Hats" role
         Role greenPartyHatsRole = server.getRoleById("1168065194858119218").orElse(null);
         if (greenPartyHatsRole != null && !targetUser.getRoles(server).contains(greenPartyHatsRole)) {
             boolean roleAssigned = retryOperation(() ->
@@ -264,12 +370,12 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
             }
         }
 
-        // Assign the rank role based on the OSRS rank
+        // Determine OSRS rank
         String rank = getRank(characterName);
         if (rank != null) {
-            Role role = rank.equalsIgnoreCase("deputy_owner") ?
-                    server.getRolesByNameIgnoreCase("Co-Owner").stream().findFirst().orElse(null) :
-                    server.getRolesByNameIgnoreCase(rank).stream().findFirst().orElse(null);
+            Role role = rank.equalsIgnoreCase("deputy_owner")
+                    ? server.getRolesByNameIgnoreCase("Co-Owner").stream().findFirst().orElse(null)
+                    : server.getRolesByNameIgnoreCase(rank).stream().findFirst().orElse(null);
 
             if (role != null && !targetUser.getRoles(server).contains(role)) {
                 boolean rankRoleAssigned = retryOperation(() ->
@@ -280,16 +386,18 @@ public class LinkOSRSNameCommand implements UserContextMenuCommandListener, Mess
                     return;
                 }
             }
-            // Save the user details in the database
-            saveUserDetails(discordUid, characterName, rank);
 
-            // Notify the moderator that linking is complete
-            event.getChannel().sendMessage("OSRS name linked and roles updated for " + targetUser.getDisplayName(server) + "!");
+            // Save user details in DB
+            saveUserDetails(discordUid, characterName, rank);
+            event.getChannel().sendMessage("OSRS name linked and roles updated for **" + targetUser.getDisplayName(server) + "**!");
         } else {
             event.getChannel().sendMessage("Rank not found for the OSRS character.");
         }
     }
 
+    /**
+     * Retries the given operation (async) up to 3 times.
+     */
     private boolean retryOperation(Runnable operation) {
         int maxRetries = 3;
         int retryDelay = 2000;
