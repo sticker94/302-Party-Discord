@@ -373,14 +373,7 @@ public class Main {
                 "Start a new giveaway",
                 Arrays.asList(
                         SlashCommandOption.create(SlashCommandOptionType.STRING, "prize", "Name of the prize", true),
-
-                        // We'll create 3 separate fields for days, hours, and minutes (all optional)
-                        SlashCommandOption.create(SlashCommandOptionType.LONG, "days", "How many days", false),
-                        SlashCommandOption.create(SlashCommandOptionType.LONG, "hours", "How many hours", false),
-                        SlashCommandOption.create(SlashCommandOptionType.LONG, "minutes", "How many minutes", false),
-
                         SlashCommandOption.create(SlashCommandOptionType.LONG, "winners", "Number of winners", true),
-
                         SlashCommandOption.createWithChoices(
                                 SlashCommandOptionType.STRING,
                                 "funds_source",
@@ -391,6 +384,10 @@ public class Main {
                                         SlashCommandOptionChoice.create("Personal", "personal")
                                 )
                         ),
+                        // We'll create 3 separate fields for days, hours, and minutes (all optional)
+                        SlashCommandOption.create(SlashCommandOptionType.LONG, "days", "How many days", false),
+                        SlashCommandOption.create(SlashCommandOptionType.LONG, "hours", "How many hours", false),
+                        SlashCommandOption.create(SlashCommandOptionType.LONG, "minutes", "How many minutes", false),
                         SlashCommandOption.create(SlashCommandOptionType.STRING, "description", "Giveaway description", false),
                         giveawayItemOption.build()
                 )
