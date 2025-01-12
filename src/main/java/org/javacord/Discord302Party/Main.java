@@ -106,6 +106,7 @@ public class Main {
         api.addAutocompleteCreateListener(itemAutocompleteListener);
         api.addSlashCommandCreateListener(new FlipCommand());
         api.addSlashCommandCreateListener(new MoneymakeCommand());
+        api.addSlashCommandCreateListener(new GiveawayCommand());
 
 
         // Log a message, if the bot joined or left a server
@@ -355,6 +356,71 @@ public class Main {
                         )
                         .createForServer(api.getServerById(guildId).get())
                         .join();
+
+
+        // 1) Build a subcommand option for "item"
+        SlashCommandOptionBuilder giveawayItemOption = new SlashCommandOptionBuilder()
+                .setType(SlashCommandOptionType.STRING)
+                .setName("item")
+                .setDescription("Exact item name if applicable")
+                .setRequired(false)
+                .setAutocompletable(true);
+
+        // 2) Build the /giveaway start subcommand
+        SlashCommandOption giveawayStart = SlashCommandOption.createWithOptions(
+                SlashCommandOptionType.SUB_COMMAND,
+                "start",
+                "Start a new giveaway",
+                Arrays.asList(
+                        SlashCommandOption.create(SlashCommandOptionType.STRING, "prize", "Name of the prize", true),
+
+                        // We'll create 3 separate fields for days, hours, and minutes (all optional)
+                        SlashCommandOption.create(SlashCommandOptionType.LONG, "days", "How many days", false),
+                        SlashCommandOption.create(SlashCommandOptionType.LONG, "hours", "How many hours", false),
+                        SlashCommandOption.create(SlashCommandOptionType.LONG, "minutes", "How many minutes", false),
+
+                        SlashCommandOption.create(SlashCommandOptionType.LONG, "winners", "Number of winners", true),
+
+                        SlashCommandOption.createWithChoices(
+                                SlashCommandOptionType.STRING,
+                                "funds_source",
+                                "Clan or personal",
+                                true,
+                                Arrays.asList(
+                                        SlashCommandOptionChoice.create("Clan", "clan"),
+                                        SlashCommandOptionChoice.create("Personal", "personal")
+                                )
+                        ),
+                        SlashCommandOption.create(SlashCommandOptionType.STRING, "description", "Giveaway description", false),
+                        giveawayItemOption.build()
+                )
+        );
+        // 3) Build the /giveaway end subcommand
+        SlashCommandOption giveawayEnd = SlashCommandOption.createWithOptions(
+                SlashCommandOptionType.SUB_COMMAND,
+                "end",
+                "End a giveaway early (mark ended)",
+                Arrays.asList(
+                        SlashCommandOption.create(SlashCommandOptionType.LONG, "giveaway_id", "ID of the giveaway to end", true)
+                )
+        );
+        // 4) Build the /giveaway claim subcommand
+        SlashCommandOption giveawayClaim = SlashCommandOption.createWithOptions(
+                SlashCommandOptionType.SUB_COMMAND,
+                "claim",
+                "Mark that a user claimed their prize",
+                Arrays.asList(
+                        SlashCommandOption.create(SlashCommandOptionType.LONG, "giveaway_id", "ID of the giveaway", true),
+                        SlashCommandOption.create(SlashCommandOptionType.USER, "winner", "Winner who claimed", true)
+                )
+        );
+        // 5) Combine everything into the main /giveaway command
+        SlashCommand.with("giveaway", "Manage giveaways",
+                Arrays.asList(giveawayStart, giveawayEnd, giveawayClaim)
+        )
+                .setDefaultEnabledForPermissions(PermissionType.MANAGE_SERVER)
+                .createForServer(api.getServerById(guildId).get())
+                .join();
 
 
         logger.info("Commands registered for guild: {}", guildId);

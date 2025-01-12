@@ -3,11 +3,12 @@ package org.javacord.Discord302Party.command;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.javacord.api.interaction.SlashCommandOptionChoice;
 import org.javacord.api.event.interaction.AutocompleteCreateEvent;
+import org.javacord.api.interaction.SlashCommandOptionChoice;
 import org.javacord.api.listener.interaction.AutocompleteCreateListener;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
@@ -25,25 +26,48 @@ public class ItemAutocompleteListener implements AutocompleteCreateListener {
     @Override
     public void onAutocompleteCreate(AutocompleteCreateEvent event) {
         logger.info("Autocomplete Created");
+
+        // 1) Handle `/item_price item`
         if (event.getAutocompleteInteraction().getCommandName().equalsIgnoreCase("item_price")) {
-            logger.info("Autocomplete Interaction");
-            // Check if the focused option is "item_id"
+            logger.info("Autocomplete Interaction for /item_price");
             if (event.getAutocompleteInteraction().getFocusedOption().getName().equals("item")) {
                 String input = event.getAutocompleteInteraction().getFocusedOption().getStringValue().orElse("");
                 logger.info("Autocomplete triggered for item_id with input: " + input);
 
-                // Fetch matching items based on input
                 List<SlashCommandOptionChoice> matchingItems = fetchItemsFromApi(input).stream()
                         .map(item -> {
-                            // Truncate the item name to a maximum of 25 characters
-                            String truncatedItem = item.length() > 25 ? item.substring(0, 25) : item;
-                            return SlashCommandOptionChoice.create(truncatedItem, truncatedItem);
+                            String truncated = item.length() > 25 ? item.substring(0, 25) : item;
+                            return SlashCommandOptionChoice.create(truncated, truncated);
                         })
                         .limit(25)
                         .collect(Collectors.toList());
 
-                // Respond with the filtered list of matching items
                 event.getAutocompleteInteraction().respondWithChoices(matchingItems).join();
+            }
+        }
+
+        // 2) Handle `/giveaway start item`
+        else if (event.getAutocompleteInteraction().getCommandName().equalsIgnoreCase("giveaway")) {
+            // Check subcommand (if present)
+            if (!event.getAutocompleteInteraction().getOptions().isEmpty()) {
+                String subcommand = event.getAutocompleteInteraction().getOptions().get(0).getName();
+                if (subcommand.equalsIgnoreCase("start")) {
+                    // Check if the user is typing in the "item" option
+                    if (event.getAutocompleteInteraction().getFocusedOption().getName().equals("item")) {
+                        String input = event.getAutocompleteInteraction().getFocusedOption().getStringValue().orElse("");
+                        logger.info("Autocomplete triggered for /giveaway start item with input: " + input);
+
+                        List<SlashCommandOptionChoice> matchingItems = fetchItemsFromApi(input).stream()
+                                .map(item -> {
+                                    String truncated = item.length() > 25 ? item.substring(0, 25) : item;
+                                    return SlashCommandOptionChoice.create(truncated, truncated);
+                                })
+                                .limit(25)
+                                .collect(Collectors.toList());
+
+                        event.getAutocompleteInteraction().respondWithChoices(matchingItems).join();
+                    }
+                }
             }
         }
     }
@@ -68,10 +92,10 @@ public class ItemAutocompleteListener implements AutocompleteCreateListener {
             }
             in.close();
 
-            // Parse the JSON response with Jackson
+            // Parse the JSON response
             JsonNode rootNode = objectMapper.readTree(response.toString());
 
-            // Return a list of item names
+            // Return all item names
             return rootNode.findValues("name").stream()
                     .map(JsonNode::asText)
                     .collect(Collectors.toList());
